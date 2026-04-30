@@ -11,6 +11,7 @@ const ClientsProject = ({ isDarkMode, onNavigateToClient }) => {
   const [clients, setClients] = useState([]);
   const [projects, setProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
 
   const theme = {
     bg: isDarkMode ? '#0a0f1e' : '#f8fafc',
@@ -37,6 +38,8 @@ const ClientsProject = ({ isDarkMode, onNavigateToClient }) => {
         console.error('Data Load Error:', err);
         setClients(JSON.parse(localStorage.getItem('studio_clients') || '[]'));
         setProjects(JSON.parse(localStorage.getItem('studio_projects') || '[]'));
+      } finally {
+        setLoading(false);
       }
     };
     fetchData();
@@ -58,6 +61,18 @@ const ClientsProject = ({ isDarkMode, onNavigateToClient }) => {
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: isDarkMode ? '#94a3b8' : '#64748b' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <Briefcase size={32} style={{ animation: 'pulse 1.5s infinite' }} />
+          <span style={{ fontSize: '16px', fontWeight: '600' }}>Loading Logistical Data...</span>
+          <style>{`@keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }`}</style>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '24px 0', minHeight: '100%', display: 'flex', flexDirection: 'column', gap: '32px', animation: 'fadeIn 0.5s ease' }}>

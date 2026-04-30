@@ -70,6 +70,24 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
+// Auto-update schema for team members
+(async () => {
+  try {
+    const cols = await pool.query('SHOW COLUMNS FROM team_members');
+    const existing = cols[0].map(c => c.Field);
+    
+    if (!existing.includes('is_leader')) await pool.query('ALTER TABLE team_members ADD COLUMN is_leader BOOLEAN DEFAULT FALSE');
+    if (!existing.includes('leader_id')) await pool.query('ALTER TABLE team_members ADD COLUMN leader_id INT');
+    if (!existing.includes('bank_name')) await pool.query('ALTER TABLE team_members ADD COLUMN bank_name VARCHAR(255)');
+    if (!existing.includes('account_number')) await pool.query('ALTER TABLE team_members ADD COLUMN account_number VARCHAR(255)');
+    if (!existing.includes('ifsc_code')) await pool.query('ALTER TABLE team_members ADD COLUMN ifsc_code VARCHAR(100)');
+    if (!existing.includes('upi_id')) await pool.query('ALTER TABLE team_members ADD COLUMN upi_id VARCHAR(100)');
+    console.log('✅ Team members table schema verified/updated');
+  } catch (err) {
+    console.error('Schema update error:', err.message);
+  }
+})();
+
 // 👤 1. GET ALL CLIENTS
 app.get('/api/clients', async (req, res) => {
   try {
@@ -89,12 +107,35 @@ app.get('/api/all-projects', async (req, res) => {
         JOIN clients c ON p.client_id = c.id 
         ORDER BY p.event_date DESC`);
       
-      for (let p of projects) {
-          const [services] = await pool.query('SELECT service_name FROM project_services WHERE project_id = ?', [p.id]);
-          p.selectedServices = services.map(s => s.service_name);
+      if (projects.length > 0) {
+          const projectIds = projects.map(p => p.id);
           
-          const [assignments] = await pool.query('SELECT member_id FROM project_assignments WHERE project_id = ?', [p.id]);
-          p.assignedTeam = assignments.map(a => a.member_id.toString());
+          const [allServices] = await pool.query('SELECT project_id, service_name FROM project_services WHERE project_id IN (?)', [projectIds]);
+          const servicesMap = {};
+          allServices.forEach(s => {
+            if (!servicesMap[s.project_id]) servicesMap[s.project_id] = [];
+            servicesMap[s.project_id].push(s.service_name);
+          });
+          
+          const [allAssignments] = await pool.query('SELECT project_id, member_id FROM project_assignments WHERE project_id IN (?)', [projectIds]);
+          const assignmentsMap = {};
+          allAssignments.forEach(a => {
+            if (!assignmentsMap[a.project_id]) assignmentsMap[a.project_id] = [];
+            assignmentsMap[a.project_id].push(a.member_id.toString());
+          });
+
+          for (let p of projects) {
+              p.selectedServices = servicesMap[p.id] || [];
+              p.assignedTeam = assignmentsMap[p.id] || [];
+              p.date = p.event_date; // Map for frontend
+              p.daysOfProgram = p.days_of_program;
+              p.teamPrice = p.team_price;
+              p.editorPrice = p.editor_price;
+              p.albumPrice = p.album_price;
+              p.startTime = p.start_time;
+              try { p.schedule = p.shoot_custom_dates ? JSON.parse(p.shoot_custom_dates) : []; } catch(e) { p.schedule = []; }
+              try { p.editingServices = p.editing_services ? JSON.parse(p.editing_services) : []; } catch(e) { p.editingServices = []; }
+          }
       }
   
       res.json(projects);
@@ -115,12 +156,35 @@ app.get('/api/projects/:clientName', async (req, res) => {
       WHERE c.name = ?`, [clientName]);
     
     // Fetch services and assignments for each project
-    for (let p of projects) {
-        const [services] = await pool.query('SELECT service_name FROM project_services WHERE project_id = ?', [p.id]);
-        p.selectedServices = services.map(s => s.service_name);
+    if (projects.length > 0) {
+        const projectIds = projects.map(p => p.id);
         
-        const [assignments] = await pool.query('SELECT member_id FROM project_assignments WHERE project_id = ?', [p.id]);
-        p.assignedTeam = assignments.map(a => a.member_id.toString());
+        const [allServices] = await pool.query('SELECT project_id, service_name FROM project_services WHERE project_id IN (?)', [projectIds]);
+        const servicesMap = {};
+        allServices.forEach(s => {
+          if (!servicesMap[s.project_id]) servicesMap[s.project_id] = [];
+          servicesMap[s.project_id].push(s.service_name);
+        });
+        
+        const [allAssignments] = await pool.query('SELECT project_id, member_id FROM project_assignments WHERE project_id IN (?)', [projectIds]);
+        const assignmentsMap = {};
+        allAssignments.forEach(a => {
+          if (!assignmentsMap[a.project_id]) assignmentsMap[a.project_id] = [];
+          assignmentsMap[a.project_id].push(a.member_id.toString());
+        });
+
+        for (let p of projects) {
+            p.selectedServices = servicesMap[p.id] || [];
+            p.assignedTeam = assignmentsMap[p.id] || [];
+            p.date = p.event_date; // Map for frontend
+            p.daysOfProgram = p.days_of_program;
+            p.teamPrice = p.team_price;
+            p.editorPrice = p.editor_price;
+            p.albumPrice = p.album_price;
+            p.startTime = p.start_time;
+            try { p.schedule = p.shoot_custom_dates ? JSON.parse(p.shoot_custom_dates) : []; } catch(e) { p.schedule = []; }
+            try { p.editingServices = p.editing_services ? JSON.parse(p.editing_services) : []; } catch(e) { p.editingServices = []; }
+        }
     }
 
     res.json(projects);
@@ -141,6 +205,16 @@ app.post('/api/projects', async (req, res) => {
     const [clients] = await connection.query('SELECT id FROM clients WHERE name = ?', [p.clientName]);
     if (clients.length === 0) throw new Error('Client not found');
     const clientID = clients[0].id;
+
+    // 🛑 Prevent Duplicates (Check if same title/date exists for this client)
+    const [existing] = await connection.query(
+      'SELECT id FROM projects WHERE client_id = ? AND title = ? AND event_date = ?',
+      [clientID, p.title, p.date]
+    );
+    if (existing.length > 0) {
+      await connection.rollback();
+      return res.status(200).json({ success: true, id: existing[0].id, message: 'Project already exists' });
+    }
 
     // Insert Project
     const [result] = await connection.query(
@@ -180,19 +254,59 @@ app.put('/api/projects/:id', async (req, res) => {
     // Update main project table
     const updateFields = [];
     const values = [];
+    
+    // Exhaustive map of all standard fields sent by ClientDetails.jsx
     const fieldMap = {
         title: 'title', date: 'event_date', status: 'status', 
         daysOfProgram: 'days_of_program', teamPrice: 'team_price',
-        dataFromTeam: 'data_from_team', editorID: 'editor_id',
-        venue: 'venue', startTime: 'start_time', budget: 'budget',
-        deadline: 'deadline', shootCustomDates: 'shoot_custom_dates'
+        dataFromTeam: 'data_from_team', venue: 'venue', startTime: 'start_time', 
+        budget: 'budget', deadline: 'deadline',
+        
+        // New Tracking & Workflow Fields
+        dataFromClient: 'dataFromClient', dataToStudio: 'dataToStudio',
+        deliveryDeadline: 'deliveryDeadline', clientMsgSent: 'clientMsgSent',
+        editorMsgSent: 'editorMsgSent', dataToEditor: 'data_to_editor',
+        deadlineDate: 'deadlineDate', editorPrice: 'editor_price', 
+        reelsCount: 'reelsCount', albumRequired: 'albumRequired', 
+        designerMsgSent: 'designerMsgSent', dataToDesigner: 'dataToDesigner', 
+        albumDeadline: 'albumDeadline', albumPrice: 'album_price', 
+        happyMsgSent: 'happyMsgSent', msg1Sent: 'msg1Sent', msg2Sent: 'msg2Sent'
     };
 
     for (let [key, column] of Object.entries(fieldMap)) {
         if (p[key] !== undefined) {
+            let val = p[key];
+            
+            // Fix for empty strings causing MySQL strict mode errors
+            if (val === '') {
+                if (key.includes('date') || key.toLowerCase().includes('deadline') || key.includes('Date')) {
+                    val = null; // Empty dates should be NULL
+                } else if (key.toLowerCase().includes('price') || key === 'budget' || key === 'reelsCount' || key === 'daysOfProgram') {
+                    val = 0; // Empty numeric fields should be 0
+                }
+            }
+
             updateFields.push(`${column} = ?`);
-            values.push(p[key]);
+            values.push(val);
         }
+    }
+
+    // Handle Editor Assignment (First item in array -> editor_id)
+    if (p.assignedEditor !== undefined) {
+        updateFields.push('editor_id = ?');
+        values.push(p.assignedEditor.length > 0 && p.assignedEditor[0] ? p.assignedEditor[0] : null);
+    }
+
+    // Handle Designer Assignment (First item in array -> album_artist_id)
+    if (p.assignedDesigner !== undefined) {
+        updateFields.push('album_artist_id = ?');
+        values.push(p.assignedDesigner.length > 0 && p.assignedDesigner[0] ? p.assignedDesigner[0] : null);
+    }
+
+    // Handle Schedule Array (Serialize to JSON)
+    if (p.schedule !== undefined) {
+        updateFields.push('shoot_custom_dates = ?');
+        values.push(JSON.stringify(p.schedule));
     }
 
     if (updateFields.length > 0) {
@@ -208,8 +322,14 @@ app.put('/api/projects/:id', async (req, res) => {
             await connection.query('INSERT INTO project_services (project_id, service_name) VALUES ?', [serviceValues]);
         }
     }
+    
+    // Update Editing Services
+    if (p.editingServices !== undefined) {
+        updateFields.push('editing_services = ?');
+        values.push(JSON.stringify(p.editingServices));
+    }
 
-    // Update Assignments
+    // Update Assignments (Team Leader / Crew)
     if (p.assignedTeam !== undefined) {
         await connection.query('DELETE FROM project_assignments WHERE project_id = ?', [id]);
         if (p.assignedTeam.length > 0) {
@@ -246,8 +366,8 @@ app.post('/api/clients', async (req, res) => {
     const { name, phone, email, address, notes, category } = req.body;
     try {
         const [result] = await pool.query(
-            'INSERT INTO clients (name, phone, email, address, notes) VALUES (?, ?, ?, ?, ?)',
-            [name, phone, email, address, notes]
+            'INSERT INTO clients (name, phone, email, address, notes, category) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, phone, email, address, notes, category || 'Other']
         );
         res.status(201).json({ id: result.insertId });
     } catch (err) {
@@ -258,11 +378,11 @@ app.post('/api/clients', async (req, res) => {
 
 app.put('/api/clients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, phone, email, address, notes } = req.body;
+    const { name, phone, email, address, notes, category } = req.body;
     try {
         await pool.query(
-            'UPDATE clients SET name = ?, phone = ?, email = ?, address = ?, notes = ? WHERE id = ?',
-            [name, phone, email, address, notes, id]
+            'UPDATE clients SET name = ?, phone = ?, email = ?, address = ?, notes = ?, category = ? WHERE id = ?',
+            [name, phone, email, address, notes, category, id]
         );
         res.json({ success: true });
     } catch (err) {
@@ -285,14 +405,53 @@ app.delete('/api/clients/:id', async (req, res) => {
 // 🧾 7. INVOICES
 app.get('/api/invoices', async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM invoices ORDER BY invoice_date DESC');
-        for (let inv of rows) {
-            const [items] = await pool.query('SELECT * FROM invoice_items WHERE invoice_id = ?', [inv.id]);
-            inv.items = items;
+        const [rows] = await pool.query(`
+            SELECT i.*, c.name as clientName 
+            FROM invoices i 
+            LEFT JOIN clients c ON i.client_id = c.id 
+            ORDER BY i.invoice_date DESC
+        `);
+        
+        if (rows.length > 0) {
+            const invoiceIds = rows.map(inv => inv.id);
+            const [allItems] = await pool.query('SELECT * FROM invoice_items WHERE invoice_id IN (?)', [invoiceIds]);
             
-            // Get client name for frontend compatibility
-            const [clients] = await pool.query('SELECT name FROM clients WHERE id = ?', [inv.client_id]);
-            inv.client = { name: clients[0]?.name || 'Unknown' };
+            const itemsMap = {};
+            allItems.forEach(item => {
+                if (!itemsMap[item.invoice_id]) itemsMap[item.invoice_id] = [];
+                itemsMap[item.invoice_id].push(item);
+            });
+
+            for (let inv of rows) {
+                inv.items = itemsMap[inv.id] || [];
+                inv.client = { name: inv.clientName || 'Unknown' };
+                
+                // Fix double prefix for invoice number
+                let num = inv.invoice_number || '';
+                if (num.startsWith('#INV-')) num = num.substring(5);
+                else if (num.startsWith('INV-')) num = num.substring(4);
+
+                // Compute total dynamically if it is null or 0 in DB
+                let computedTotal = parseFloat(inv.total_amount) || 0;
+                if (!computedTotal && inv.items.length > 0) {
+                    const sub = inv.items.reduce((s, i) => s + (parseFloat(i.rate) || 0) * (parseInt(i.qty) || 0), 0);
+                    const tax = sub * ((parseFloat(inv.tax_amount) || 0) / 100);
+                    computedTotal = sub + tax;
+                }
+
+                // Map db columns to frontend expectations
+                inv.number = num;
+                inv.date = inv.invoice_date;
+                inv.amount = computedTotal;
+                inv.total = computedTotal;
+                inv.taxRate = inv.tax_amount;
+                inv.tax = inv.tax_amount;
+                inv.discount = inv.discount_amount;
+                inv.amountPaid = inv.paid_amount;
+                inv.paidAmount = inv.paid_amount;
+                
+                delete inv.clientName;
+            }
         }
         res.json(rows);
     } catch (err) {
@@ -313,7 +472,6 @@ app.post('/api/invoices', async (req, res) => {
             const [clients] = await connection.query('SELECT id FROM clients WHERE name = ?', [inv.client.name]);
             if (clients.length > 0) {
                 clientID = clients[0].id;
-                // Optionally update client data here
             } else {
                 const [newClient] = await connection.query(
                     'INSERT INTO clients (name, phone, email, address, gst_number) VALUES (?, ?, ?, ?, ?)',
@@ -329,8 +487,8 @@ app.post('/api/invoices', async (req, res) => {
         }
 
         const [result] = await connection.query(
-            'INSERT INTO invoices (invoice_number, client_id, invoice_date, total_amount, tax_amount, discount_amount, paid_amount, status, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [inv.number, clientID, inv.date, inv.total, inv.tax, inv.discount, inv.paidAmount, inv.status, inv.notes]
+            'INSERT INTO invoices (invoice_number, client_id, invoice_date, total_amount, tax_amount, discount_amount, paid_amount, status, notes, deliverables) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [inv.number, clientID, inv.date, inv.total, inv.tax, inv.discount, inv.paidAmount, inv.status, inv.notes, inv.deliverables || '']
         );
         const invoiceID = result.insertId;
 
@@ -343,17 +501,78 @@ app.post('/api/invoices', async (req, res) => {
         res.status(201).json({ id: invoiceID });
     } catch (err) {
         await connection.rollback();
-        console.error(err);
-        res.status(500).json({ error: 'Database error' });
+        console.error('Invoice POST Error:', err);
+        res.status(500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'Invoice number already exists' : 'Database error' });
     } finally {
         connection.release();
+    }
+});
+
+app.put('/api/invoices/:id', async (req, res) => {
+    const { id } = req.params;
+    const inv = req.body;
+    const connection = await pool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        // 1. Update Client (or find existing)
+        let clientID = null;
+        if (inv.client && inv.client.name) {
+            const [clients] = await connection.query('SELECT id FROM clients WHERE name = ?', [inv.client.name]);
+            if (clients.length > 0) {
+                clientID = clients[0].id;
+                await connection.query(
+                    'UPDATE clients SET phone = ?, email = ?, address = ?, gst_number = ? WHERE id = ?',
+                    [inv.client.phone || null, inv.client.email || null, inv.client.address || null, inv.client.gstin || null, clientID]
+                );
+            } else {
+                const [newClient] = await connection.query(
+                    'INSERT INTO clients (name, phone, email, address, gst_number) VALUES (?, ?, ?, ?, ?)',
+                    [inv.client.name, inv.client.phone || null, inv.client.email || null, inv.client.address || null, inv.client.gstin || null]
+                );
+                clientID = newClient.insertId;
+            }
+        }
+
+        // 2. Update Invoice
+        await connection.query(
+            'UPDATE invoices SET invoice_number = ?, client_id = ?, invoice_date = ?, total_amount = ?, tax_amount = ?, discount_amount = ?, paid_amount = ?, status = ?, notes = ?, deliverables = ? WHERE id = ?',
+            [inv.number, clientID, inv.date, inv.total, inv.tax, inv.discount, inv.paidAmount, inv.status, inv.notes, inv.deliverables || '', id]
+        );
+
+        // 3. Update Items (Delete and re-insert)
+        await connection.query('DELETE FROM invoice_items WHERE invoice_id = ?', [id]);
+        if (inv.items && inv.items.length > 0) {
+            const itemValues = inv.items.map(item => [id, item.description, item.rate, item.qty, (item.rate * item.qty)]);
+            await connection.query('INSERT INTO invoice_items (invoice_id, description, rate, qty, amount) VALUES ?', [itemValues]);
+        }
+
+        await connection.commit();
+        res.json({ success: true });
+    } catch (err) {
+        await connection.rollback();
+        console.error('Invoice PUT Error:', err);
+        res.status(500).json({ error: err.code === 'ER_DUP_ENTRY' ? 'Invoice number already exists' : 'Database error' });
+    } finally {
+        connection.release();
+    }
+});
+
+app.delete('/api/invoices/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.query('DELETE FROM invoices WHERE id = ?', [id]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Invoice DELETE Error:', err);
+        res.status(500).json({ error: 'Database error' });
     }
 });
 
 // 👥 8. TEAM MEMBERS
 app.get('/api/team', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM team_members ORDER BY name ASC');
+    const [rows] = await pool.query('SELECT *, image_url as image, is_leader as isLeader, leader_id as leaderId, bank_name as bankName, account_number as accountNumber, ifsc_code as ifscCode, upi_id as upiId FROM team_members ORDER BY name ASC');
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -362,11 +581,11 @@ app.get('/api/team', async (req, res) => {
 });
 
 app.post('/api/team', async (req, res) => {
-  const { name, role, phone, email, image_url, daily_rate } = req.body;
+  const { name, role, phone, email, image_url, daily_rate, status, isLeader, leaderId, bankName, accountNumber, ifscCode, upiId } = req.body;
   try {
     const [result] = await pool.query(
-      'INSERT INTO team_members (name, role, phone, email, image_url, daily_rate) VALUES (?, ?, ?, ?, ?, ?)',
-      [name, role, phone, email, image_url, daily_rate]
+      'INSERT INTO team_members (name, role, phone, email, image_url, daily_rate, status, is_leader, leader_id, bank_name, account_number, ifsc_code, upi_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [name, role, phone, email, image_url || '', daily_rate || 0, status || 'Active', isLeader ? 1 : 0, leaderId || null, bankName || '', accountNumber || '', ifscCode || '', upiId || '']
     );
     res.status(201).json({ id: result.insertId });
   } catch (err) {
@@ -377,11 +596,11 @@ app.post('/api/team', async (req, res) => {
 
 app.put('/api/team/:id', async (req, res) => {
   const { id } = req.params;
-  const { name, role, phone, email, image_url, daily_rate, status } = req.body;
+  const { name, role, phone, email, image_url, daily_rate, status, isLeader, leaderId, bankName, accountNumber, ifscCode, upiId } = req.body;
   try {
     await pool.query(
-      'UPDATE team_members SET name = ?, role = ?, phone = ?, email = ?, image_url = ?, daily_rate = ?, status = ? WHERE id = ?',
-      [name, role, phone, email, image_url, daily_rate, status, id]
+      'UPDATE team_members SET name = ?, role = ?, phone = ?, email = ?, image_url = ?, daily_rate = ?, status = ?, is_leader = ?, leader_id = ?, bank_name = ?, account_number = ?, ifsc_code = ?, upi_id = ? WHERE id = ?',
+      [name, role, phone, email, image_url || '', daily_rate || 0, status || 'Active', isLeader ? 1 : 0, leaderId || null, bankName || '', accountNumber || '', ifscCode || '', upiId || '', id]
     );
     res.json({ success: true });
   } catch (err) {
@@ -449,6 +668,19 @@ app.delete('/api/notes/:id', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Database error' });
+    }
+});
+
+// 🧹 10. ADMIN CLEANUP (Temporary)
+app.get('/api/admin/master-cleanup', async (req, res) => {
+    try {
+        // Remove empty dates
+        await pool.query('DELETE FROM projects WHERE event_date IS NULL OR event_date = "" OR event_date = "0000-00-00"');
+        // Remove duplicates
+        await pool.query('DELETE p1 FROM projects p1 INNER JOIN projects p2 WHERE p1.id > p2.id AND p1.client_id = p2.client_id AND p1.title = p2.title AND p1.event_date = p2.event_date');
+        res.json({ success: true, message: 'Database cleaned!' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 

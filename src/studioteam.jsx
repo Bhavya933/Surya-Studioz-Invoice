@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, Plus, Search, Mail, Phone, MoreHorizontal, 
-  Trash2, Edit2, X, Camera, Palette, Video, PenTool, Star, Check
+  Trash2, Edit2, X, Camera, Palette, Video, PenTool, Star, Check, RefreshCw, User
 } from 'lucide-react';
 
 const ROLES = [
@@ -25,6 +25,7 @@ const StudioTeam = ({ isDarkMode }) => {
   };
 
   const [members, setMembers] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,15 +36,18 @@ const StudioTeam = ({ isDarkMode }) => {
     email: '',
     phone: '',
     image: '',
-    leaderId: '', // ID of the team leader
-    isLeader: false, // Whether THIS person is a team leader
+    leaderId: '', 
+    isLeader: false, 
     bankName: '',
     accountNumber: '',
     ifscCode: '',
     upiId: '',
+    daily_rate: 0,
+    status: 'Active'
   });
 
   const fetchMembers = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch(`${API_URL}/team`);
       const data = await res.json();
@@ -52,6 +56,8 @@ const StudioTeam = ({ isDarkMode }) => {
       console.error('Team Fetch Error:', err);
       // Fallback
       setMembers(JSON.parse(localStorage.getItem('studio_team') || '[]'));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -69,7 +75,8 @@ const StudioTeam = ({ isDarkMode }) => {
     const dataToSave = { 
       ...formData, 
       leaderId: formData.isLeader ? '' : formData.leaderId,
-      image_url: formData.image || `https://i.pravatar.cc/150?u=${Date.now()}`
+      daily_rate: parseFloat(formData.daily_rate) || 0,
+      status: formData.status || 'Active'
     };
     
     try {
@@ -106,7 +113,7 @@ const StudioTeam = ({ isDarkMode }) => {
       setFormData({ ...member });
     } else {
       setEditingMember(null);
-      setFormData({ name: '', role: 'photographer', email: '', phone: '', image: '', leaderId: '', isLeader: false, bankName: '', accountNumber: '', ifscCode: '', upiId: '' });
+      setFormData({ name: '', role: 'photographer', email: '', phone: '', image: '', leaderId: '', isLeader: false, bankName: '', accountNumber: '', ifscCode: '', upiId: '', daily_rate: 0, status: 'Active' });
     }
     setIsModalOpen(true);
   };
@@ -172,26 +179,16 @@ const StudioTeam = ({ isDarkMode }) => {
           </div>
         )}
 
-        {/* Profile Image */}
-        <div style={{ position: 'relative', marginBottom: '12px' }}>
-          <img 
-            src={member.image} 
-            alt={member.name} 
-            style={{ width: '60px', height: '60px', borderRadius: '18px', objectFit: 'cover', border: member.isLeader ? '3px solid #f59e0b' : `3px solid ${theme.card}`, boxShadow: '0 6px 15px rgba(0,0,0,0.1)' }} 
-          />
-          <div style={{ 
-            position: 'absolute', 
-            bottom: '-4px', 
-            right: '-4px', 
-            background: roleInfo.color, 
-            padding: '5px', 
-            borderRadius: '10px', 
-            color: '#fff',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
-            border: '2px solid ' + theme.card
-          }}>
-            <RoleIcon size={12} />
-          </div>
+        {/* Profile Icon instead of Image */}
+        <div style={{ 
+          width: '60px', height: '60px', borderRadius: '18px', 
+          background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: member.isLeader ? '3px solid #f59e0b' : `3px solid ${theme.card}`, 
+          boxShadow: '0 6px 15px rgba(0,0,0,0.1)',
+          marginBottom: '12px',
+          color: roleInfo.color
+        }}>
+          <User size={32} />
         </div>
 
         <h3 style={{ fontSize: '15px', fontWeight: '800', color: theme.text, margin: '0 0 2px 0' }}>{member.name}</h3>
@@ -247,6 +244,18 @@ const StudioTeam = ({ isDarkMode }) => {
       </div>
     );
   };
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: theme.muted }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite' }} />
+          <span style={{ fontSize: '16px', fontWeight: '600' }}>Loading Team Data...</span>
+          <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -471,9 +480,18 @@ const StudioTeam = ({ isDarkMode }) => {
                 </div>
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '800', color: theme.muted, marginBottom: '8px' }}>Profile Photo URL</label>
-                <input type="text" value={formData.image} onChange={(e) => setFormData({ ...formData, image: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: '14px', border: '1px solid ' + theme.border, fontSize: '14px', outline: 'none', background: theme.bg, color: theme.text }} placeholder="https://unsplash..." />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '800', color: theme.muted, marginBottom: '8px' }}>Daily Rate (₹)</label>
+                  <input type="number" value={formData.daily_rate} onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: '14px', border: '1px solid ' + theme.border, fontSize: '14px', outline: 'none', background: theme.bg, color: theme.text }} placeholder="0" />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '800', color: theme.muted, marginBottom: '8px' }}>Member Status</label>
+                  <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: '14px', border: '1px solid ' + theme.border, fontSize: '14px', outline: 'none', background: theme.bg, color: theme.text }}>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
 
               {/* Account Details Section for Leaders */}

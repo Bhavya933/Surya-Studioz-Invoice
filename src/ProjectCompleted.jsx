@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   CheckCircle, Search, Mail, Phone, Calendar, 
   DollarSign, ArrowRight, ExternalLink, 
-  Award, TrendingUp, BarChart2, Briefcase
+  Award, TrendingUp, BarChart2, Briefcase, RefreshCw
 } from 'lucide-react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
@@ -10,6 +10,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
   const [projects, setProjects] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   const theme = {
     bg: isDarkMode ? '#1e293b' : '#f8fafc',
@@ -22,6 +23,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
 
   useEffect(() => {
     const fetchProjects = async () => {
+      setIsLoading(true);
       try {
         const res = await fetch(`${API_URL}/all-projects`);
         const data = await res.json();
@@ -31,6 +33,8 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
       } catch (err) {
         console.error('Project Fetch Error:', err);
         setProjects(JSON.parse(localStorage.getItem('studio_projects') || '[]').filter(p => p.status === 'Delivered'));
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchProjects();
@@ -56,7 +60,17 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
 
-      {/* 📊 ARCHVIE METRICS */}
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: theme.muted }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+            <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: '16px', fontWeight: '600' }}>Loading Completed Projects...</span>
+            <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* 📊 ARCHVIE METRICS */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
         {[
           { label: 'Completed Shoots', value: stats.total, icon: CheckCircle, color: '#10b981' },
@@ -117,7 +131,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
                       </div>
                       <div>
                         <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '950', color: theme.text }}>{p.title || 'Untitled Project'}</h4>
-                        <span style={{ fontSize: '11px', color: theme.muted, fontWeight: '700' }}>#{p.id.slice(-6)}</span>
+                        <span style={{ fontSize: '11px', color: theme.muted, fontWeight: '700' }}>#{String(p.id).slice(-6)}</span>
                       </div>
                     </div>
                   </td>
@@ -160,6 +174,8 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

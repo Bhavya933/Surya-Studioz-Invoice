@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Plus, Search, Trash2, Edit2, X, Check, 
   Pin, Tag, Calendar, MessageSquare, AlertCircle,
-  Camera, User, Lightbulb, Clock, Inbox
+  Camera, User, Lightbulb, Clock, Inbox, RefreshCw
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -25,6 +25,7 @@ const Notes = ({ isDarkMode }) => {
   };
 
   const [notes, setNotes] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,6 +38,7 @@ const Notes = ({ isDarkMode }) => {
   });
 
   const fetchNotes = async () => {
+    setIsLoading(true);
     try {
       const res = await fetch(`${API_URL}/notes`);
       const data = await res.json();
@@ -44,6 +46,8 @@ const Notes = ({ isDarkMode }) => {
     } catch (err) {
       console.error('Notes Load Error:', err);
       setNotes(JSON.parse(localStorage.getItem('studio_notes') || '[]'));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -208,7 +212,14 @@ const Notes = ({ isDarkMode }) => {
         </div>
       </div>
 
-      {filteredNotes.length > 0 ? (
+      {isLoading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh', color: theme.muted }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+            <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite' }} />
+            <span style={{ fontSize: '16px', fontWeight: '600' }}>Loading Data...</span>
+          </div>
+        </div>
+      ) : filteredNotes.length > 0 ? (
         <div style={{ 
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', 
@@ -342,6 +353,7 @@ const Notes = ({ isDarkMode }) => {
             from { transform: scale(0.9); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
           }
+          @keyframes spin { 100% { transform: rotate(360deg); } }
           @keyframes notePop {
             from { transform: scale(0.9) translateY(20px); opacity: 0; }
             to { transform: scale(1) translateY(0); opacity: 1; }

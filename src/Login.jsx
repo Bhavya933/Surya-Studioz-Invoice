@@ -3,6 +3,7 @@ import {
   Lock, User, Eye, EyeOff, ArrowRight, 
   Camera, Loader2, AlertCircle, ShieldCheck
 } from 'lucide-react';
+import logo from './assets/logo.png';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
@@ -84,15 +85,7 @@ const Login = ({ onLoginSuccess, isDarkMode }) => {
       }}>
         {/* Branding Area */}
         <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            width: '64px', height: '64px', borderRadius: '20px',
-            background: theme.accent, color: '#fff', marginBottom: '20px',
-            boxShadow: '0 10px 25px rgba(249, 115, 22, 0.3)',
-            animation: 'float 4s ease-in-out infinite'
-          }}>
-            <Camera size={32} strokeWidth={2.5} />
-          </div>
+          <img src={logo} alt="Surya Studio Logo" style={{ height: '80px', objectFit: 'contain', marginBottom: '20px', animation: 'float 4s ease-in-out infinite' }} />
           <h1 style={{ fontSize: '32px', fontWeight: '900', color: theme.text, margin: 0, letterSpacing: '-0.03em' }}>
             Surya Studio
           </h1>

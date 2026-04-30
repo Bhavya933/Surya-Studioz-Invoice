@@ -15,6 +15,34 @@ import {
   HelpCircle, MessageSquare, LogOut, Search, Bell, ChevronDown, 
   Plus, DollarSign, Download, Sun, Moon
 } from 'lucide-react';
+import logo from './assets/logo.png';
+
+// 🔴 Error Boundary Component to catch crashes
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '40px', background: '#fef2f2', border: '2px solid #ef4444', borderRadius: '20px', margin: '20px', color: '#991b1b', textAlign: 'center' }}>
+          <h1 style={{ fontSize: '24px', fontWeight: '900' }}>Something went wrong.</h1>
+          <p style={{ fontWeight: '600', marginTop: '10px' }}>Error Details: {this.state.error?.toString()}</p>
+          <p style={{ fontSize: '13px', opacity: 0.8 }}>Please show this message to the developer.</p>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '20px', padding: '12px 24px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '12px', fontWeight: '800', cursor: 'pointer' }}>Refresh Page</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
@@ -147,27 +175,61 @@ const App = () => {
     try {
       const res = await fetch(`${API_URL}/invoices`);
       const data = await res.json();
+      
+      if (!Array.isArray(data)) {
+        console.warn('API did not return an array for invoices:', data);
+        setSavedInvoices(JSON.parse(localStorage.getItem('invoice_history') || '[]'));
+        return;
+      }
+
       // Map API fields to frontend if needed
-      const mapped = data.map(inv => ({
-        ...inv,
-        number: inv.invoice_number,
-        date: inv.invoice_date,
-        total: inv.total_amount,
-        amountPaid: inv.paid_amount,
-        items: (inv.items || []).map(item => {
-           let n = '';
-           let d = item.description || '';
-           const parts = d.split('\n');
-           if (parts.length > 1) { 
-               n = parts[0];
-               d = parts.slice(1).join('\n');
-           } else {
-               n = d;
-               d = '';
-           }
-           return { ...item, name: n, description: d };
-        })
-      }));
+      const mapped = data.map(inv => {
+        // Format date safely
+        let formattedDate = '';
+        try {
+            const dStr = inv.invoice_date || inv.date;
+            if (dStr) {
+                const d = new Date(dStr);
+                if (!isNaN(d.getTime())) {
+                    formattedDate = d.toISOString().split('T')[0];
+                }
+            }
+        } catch (e) {
+            console.warn('Date parsing error for invoice:', inv.id, e);
+        }
+
+        return {
+          ...inv,
+          number: inv.invoice_number,
+          date: formattedDate || inv.invoice_date,
+          amountPaid: inv.paid_amount,
+          terms: inv.notes ? inv.notes.split('\n') : [
+            'Payment Terms & Conditions',
+            '30% Advance at the time of booking confirmation',
+            '60% Payment on wedding completion / event day completion',
+            '10% Balance payable at the time of final delivery',
+          ],
+          deliverables: inv.deliverables ? inv.deliverables.split('\n') : [
+            'Wedding QR Code (Instant Digital Photo Access)',
+            'Professionally Edited Wedding Reel',
+            'High-Quality Edited Candid Photos (Couple Focused)',
+            'Total Raw Data Google Drive',
+          ],
+          items: (inv.items || []).map(item => {
+             let n = '';
+             let d = item.description || '';
+             const parts = d.split('\n');
+             if (parts.length > 1) { 
+                 n = parts[0];
+                 d = parts.slice(1).join('\n');
+             } else {
+                 n = d;
+                 d = '';
+             }
+             return { ...item, name: n, description: d };
+          })
+        };
+      });
       setSavedInvoices(mapped);
     } catch (err) {
       console.error('History Fetch Error:', err);
@@ -176,7 +238,20 @@ const App = () => {
   };
 
   useEffect(() => {
-    fetchHistory();
+    fetchHistory().then(() => {
+      // If we are on the dashboard/new invoice and haven't started typing, 
+      // update to the next available number
+      if (savedInvoices.length > 0 && invoice.number === '#INV-1118') {
+        const numbers = savedInvoices.map(inv => {
+          const match = inv.number?.match(/\d+/);
+          return match ? parseInt(match[0]) : 0;
+        });
+        const maxNum = Math.max(...numbers);
+        if (maxNum > 0) {
+          setInvoice(prev => ({ ...prev, number: `#INV-${maxNum + 1}` }));
+        }
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -186,7 +261,6 @@ const App = () => {
   const handleSaveInvoice = async () => {
     if (invoice.items.length > 0) {
       try {
-        // 1. Calculate required values
         const subtotal = invoice.items.reduce((sum, item) => sum + (item.rate * item.qty), 0);
         const taxAmount = (subtotal * invoice.taxRate) / 100;
         const totalAmount = subtotal + taxAmount;
@@ -199,27 +273,48 @@ const App = () => {
           paidAmount: invoice.amountPaid || 0,
           status: (invoice.amountPaid >= totalAmount && totalAmount > 0) ? 'Paid' : (invoice.amountPaid > 0 ? 'Partial' : 'Unpaid'),
           notes: invoice.terms?.join('\n') || '',
+          deliverables: invoice.deliverables?.join('\n') || '',
           items: invoice.items.map(i => ({
              ...i,
              description: i.name ? `${i.name}\n${i.description}`.trim() : i.description
           }))
         };
 
-        // 2. Save to Database
-        const response = await fetch(`${API_URL}/invoices`, {
-          method: 'POST',
+        // Determine if this is an edit or new invoice
+        // Database IDs are numbers or small numeric strings, 
+        // while new local IDs are large timestamp strings.
+        const isEdit = invoice.id && (
+          typeof invoice.id === 'number' || 
+          (typeof invoice.id === 'string' && invoice.id.length < 10)
+        );
+        
+        console.log('Saving invoice:', { id: invoice.id, number: invoice.number, isEdit });
+
+        const url = isEdit ? `${API_URL}/invoices/${invoice.id}` : `${API_URL}/invoices`;
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+          method: method,
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
 
+        const result = await response.json();
+
         if (!response.ok) {
-           throw new Error('Database Error');
+           throw new Error(result.error || 'Database Error');
+        }
+
+        // IMPORTANT: Update local invoice state with the new ID from database
+        if (!isEdit && result.id) {
+          setInvoice(prev => ({ ...prev, id: result.id }));
         }
 
         fetchHistory();
-        alert('Invoice successfully saved to Database!');
+        alert(isEdit ? 'Invoice updated successfully!' : 'Invoice saved successfully!');
       } catch (err) {
-        alert('Save failed');
+        console.error('Save Error:', err);
+        alert('Save failed: ' + err.message);
       }
     }
   };
@@ -312,9 +407,8 @@ const App = () => {
           padding: '30px 0',
           flexShrink: 0 
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0 24px', marginBottom: '40px' }}>
-            <div style={{ background: '#f97316', width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: '900', fontSize: '16px' }}>M</div>
-            <span style={{ color: '#fff', fontSize: '20px', fontWeight: '800' }}>Mboard</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', marginBottom: '40px' }}>
+            <img src={logo} alt="Studio Logo" style={{ height: 'auto', width: '180px', objectFit: 'contain' }} />
           </div>
           <div style={{ flex: 1 }}>
             {sidebarTabs.map((tab) => (
@@ -354,7 +448,7 @@ const App = () => {
           {/* Global Header — hidden during print */}
           <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px', flexShrink: 0 }}>
             <h1 style={{ fontSize: '24px', fontWeight: '800', color: isDarkMode ? '#f8fafc' : '#111827', margin: 0, whiteSpace: 'nowrap', flexShrink: 0 }}>
-              Welcome Back, {user?.username || 'Studio Member'}
+              Welcome Back, {user?.username === 'Rahuljajora@9660' ? 'Rahul Jajora' : (user?.username || 'Studio Member')}
             </h1>
             <div style={{ display: 'flex', alignItems: 'center', gap: '24px', minWidth: 0 }}>
               <div style={{ display: 'flex', gap: '8px' }}>
@@ -380,87 +474,102 @@ const App = () => {
                   display: 'flex', alignItems: 'center', justifyContent: 'center', 
                   color: '#fff', fontSize: '12px', fontWeight: '900' 
                 }}>
-                  {user?.username?.charAt(0).toUpperCase() || 'A'}
+                  {user?.username === 'Rahuljajora@9660' ? 'R' : (user?.username?.charAt(0).toUpperCase() || 'A')}
                 </div>
                 <span style={{ fontSize: '14px', fontWeight: '700', color: isDarkMode ? '#f8fafc' : '#111827' }}>
-                  {user?.username || 'User'}
+                  {user?.username === 'Rahuljajora@9660' ? 'Rahul' : (user?.username || 'User')}
                 </span>
               </div>
             </div>
           </div>
 
           {/* Dynamic Content */}
-          {currentPage === 'dashboard' && <Dashboard isDarkMode={isDarkMode} />}
-          {currentPage === 'history' && (
-            <HistoryPage 
-              isDarkMode={isDarkMode}
-              savedInvoices={savedInvoices} 
-              onEdit={(inv) => { setInvoice(inv); setCurrentPage('invoice'); }} 
-              onDelete={(id) => {
-                const updated = savedInvoices.filter(inv => inv.id !== id);
-                localStorage.setItem('invoice_history', JSON.stringify(updated));
-                setSavedInvoices(updated);
-              }}
-              onBack={() => setCurrentPage('dashboard')} 
-            />
-          )}
-          {currentPage === 'invoice' && (
-            <NewInvoice 
-              isDarkMode={isDarkMode}
-              invoice={invoice}
-              setInvoice={setInvoice}
-              company={company}
-              setCompany={setCompany}
-              onNewInvoice={handleNewInvoice}
-              onSave={handleSaveInvoice}
-              onNavigate={setCurrentPage}
-              onDownload={downloadPDF}
-              invoiceRef={invoiceRef}
-            />
-          )}
-          { currentPage === 'studioteam' && <StudioTeam isDarkMode={isDarkMode} /> }
-          { currentPage === 'notes' && <Notes isDarkMode={isDarkMode} /> }
-          { currentPage === 'clients' && (
-            <Clients 
-              isDarkMode={isDarkMode} 
-              onViewDetails={(client) => {
-                setSelectedClient(client);
-                setCurrentPage('client-details');
-              }}
-            />
-          )}
-          { currentPage === 'project-completed' && (
-            <ProjectCompleted 
-              isDarkMode={isDarkMode} 
-              onOpenAnalysis={(clientName) => {
-                const clients = JSON.parse(localStorage.getItem('studio_clients') || '[]');
-                const client = clients.find(c => c.name === clientName);
-                if (client) {
+          <ErrorBoundary>
+            {currentPage === 'dashboard' && <Dashboard isDarkMode={isDarkMode} />}
+            {currentPage === 'history' && (
+              <HistoryPage 
+                isDarkMode={isDarkMode}
+                savedInvoices={savedInvoices} 
+                onEdit={(inv) => { setInvoice(inv); setCurrentPage('invoice'); }} 
+                onDelete={async (id) => {
+                  if (typeof id === 'number') {
+                    try {
+                      const response = await fetch(`${API_URL}/invoices/${id}`, { method: 'DELETE' });
+                      if (response.ok) fetchHistory();
+                    } catch (err) {
+                      console.error('Delete error:', err);
+                    }
+                  } else {
+                    const updated = savedInvoices.filter(inv => inv.id !== id);
+                    localStorage.setItem('invoice_history', JSON.stringify(updated));
+                    setSavedInvoices(updated);
+                  }
+                }}
+                onBack={() => setCurrentPage('dashboard')} 
+              />
+            )}
+            {currentPage === 'invoice' && (
+              <NewInvoice 
+                isDarkMode={isDarkMode}
+                invoice={invoice}
+                setInvoice={setInvoice}
+                company={company}
+                setCompany={setCompany}
+                onNewInvoice={handleNewInvoice}
+                onSave={handleSaveInvoice}
+                onNavigate={setCurrentPage}
+                onDownload={downloadPDF}
+                invoiceRef={invoiceRef}
+              />
+            )}
+            { currentPage === 'studioteam' && <StudioTeam isDarkMode={isDarkMode} /> }
+            { currentPage === 'notes' && <Notes isDarkMode={isDarkMode} /> }
+            { currentPage === 'clients' && (
+              <Clients 
+                isDarkMode={isDarkMode} 
+                onViewDetails={(client) => {
                   setSelectedClient(client);
                   setCurrentPage('client-details');
-                }
-              }}
-            />
-          )}
-          { currentPage === 'client-details' && (
-            <ClientDetails 
-              isDarkMode={isDarkMode}
-              client={selectedClient} 
-              onBack={() => setCurrentPage('clients')} 
-              onNewInvoice={(client) => {
-                setInvoice({
-                  ...invoice,
-                  id: Date.now().toString(),
-                  client: { name: client.name, address: client.address, phone: client.phone, gstin: '' }
-                });
-                setCurrentPage('invoice');
-              }}
-              onViewInvoice={(inv) => {
-                setInvoice(inv);
-                setCurrentPage('invoice');
-              }}
-            />
-          )}
+                }}
+              />
+            )}
+            { currentPage === 'client-details' && (
+              <ClientDetails 
+                isDarkMode={isDarkMode}
+                client={selectedClient} 
+                onBack={() => setCurrentPage('clients')}
+                onNewInvoice={(client) => {
+                  setInvoice({
+                    ...invoice,
+                    id: Date.now().toString(),
+                    client: { name: client.name, address: client.address, phone: client.phone, gstin: '' }
+                  });
+                  setCurrentPage('invoice');
+                }}
+                onViewInvoice={(inv) => {
+                  setInvoice(inv);
+                  setCurrentPage('invoice');
+                }}
+              />
+            )}
+            { currentPage === 'project-completed' && (
+              <ProjectCompleted 
+                isDarkMode={isDarkMode} 
+                onOpenAnalysis={(clientName) => {
+                  const clients = JSON.parse(localStorage.getItem('studio_clients') || '[]');
+                  let client = clients.find(c => c.name === clientName);
+                  
+                  // If not found, create a basic client object so the page still opens
+                  if (!client) {
+                    client = { name: clientName, phone: '', email: '', address: '' };
+                  }
+                  
+                  setSelectedClient(client);
+                  setCurrentPage('client-details');
+                }}
+              />
+            )}
+          </ErrorBoundary>
         </div>
       </div>
     </div>

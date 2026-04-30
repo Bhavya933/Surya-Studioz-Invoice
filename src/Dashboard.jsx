@@ -75,20 +75,26 @@ const Dashboard = ({ isDarkMode }) => {
           fetch(`${API_URL}/clients`).catch(() => null)
         ]);
 
-        if (pRes && pRes.ok) projects = await pRes.json();
-        else projects = JSON.parse(localStorage.getItem('studio_projects') || '[]');
+        let pData = pRes && pRes.ok ? await pRes.json() : null;
+        projects = Array.isArray(pData) ? pData : JSON.parse(localStorage.getItem('studio_projects') || '[]');
+        if (!Array.isArray(projects)) projects = [];
 
-        if (iRes && iRes.ok) invoices = await iRes.json();
-        else invoices = JSON.parse(localStorage.getItem('invoice_history') || '[]');
+        let iData = iRes && iRes.ok ? await iRes.json() : null;
+        invoices = Array.isArray(iData) ? iData : JSON.parse(localStorage.getItem('invoice_history') || '[]');
+        if (!Array.isArray(invoices)) invoices = [];
 
-        if (cRes && cRes.ok) clients = await cRes.json();
-        else clients = JSON.parse(localStorage.getItem('studio_clients') || '[]');
+        let cData = cRes && cRes.ok ? await cRes.json() : null;
+        clients = Array.isArray(cData) ? cData : JSON.parse(localStorage.getItem('studio_clients') || '[]');
+        if (!Array.isArray(clients)) clients = [];
 
       } catch (err) {
         console.error('API Fetch Error:', err);
         projects = JSON.parse(localStorage.getItem('studio_projects') || '[]');
+        if (!Array.isArray(projects)) projects = [];
         invoices = JSON.parse(localStorage.getItem('invoice_history') || '[]');
+        if (!Array.isArray(invoices)) invoices = [];
         clients = JSON.parse(localStorage.getItem('studio_clients') || '[]');
+        if (!Array.isArray(clients)) clients = [];
       }
       
       try {
@@ -140,7 +146,7 @@ const Dashboard = ({ isDarkMode }) => {
         const marginPrev = revPrev - costPrev;
         const activePipeline = projects.filter(p => p.status !== 'Delivered').length;
 
-        const split = { Wedding: 0, Event: 0, Commercial: 0 };
+        const split = { Wedding: 0, Prewedding: 0, Commercial: 0 };
         projects.forEach(p => {
           const cat = p.category || 'Wedding';
           if (split[cat] !== undefined) split[cat]++;
@@ -155,18 +161,7 @@ const Dashboard = ({ isDarkMode }) => {
           monthLabels.push(target.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase());
         }
         
-        const maxRev = Math.max(...monthlyRev, 1000);
-        const points = monthlyRev.map((val, i) => {
-          const x = (i * (1000 / 5));
-          const y = 250 - (val / maxRev * 200);
-          return { x, y };
-        });
-
-        const pathD = points.length > 0 
-          ? `M ${points[0].x} ${points[0].y} ` + points.slice(1).map(p => `L ${p.x} ${p.y}`).join(' ')
-          : 'M 0 150 L 1000 150';
-
-        const areaD = `${pathD} L 1000 300 L 0 300 Z`;
+        const maxRev = Math.max(...monthlyRev, 100);
 
         setStats({
           revenue: revCurr || projects.reduce((s, p) => s + (Number(p.budget) || 0), 0),
@@ -179,19 +174,32 @@ const Dashboard = ({ isDarkMode }) => {
           totalClients: clients.length,
           recentInvoices: invoices.slice(0, 4),
           categorySplit: split,
-          pathD,
-          areaD,
+          monthlyRev,
           monthLabels,
-          chartPoints: points
+          maxRev: Number.isFinite(maxRev) ? maxRev : 100
         });
       } catch (err) {
         console.error('Dashboard Load Error:', err);
+        // Set a fallback state so it doesn't spin forever
+        setStats({
+          revenue: 0, revTrend: '0%', costs: 0, costTrend: '0%', margin: 0, marginTrend: '0%',
+          activePipeline: 0, totalClients: 0, recentInvoices: [], categorySplit: { Wedding: 0, Prewedding: 0, Commercial: 0 },
+          monthlyRev: [0,0,0,0,0,0], monthLabels: ['','','','','',''], maxRev: 100
+        });
       }
     };
     fetchData();
   }, []);
 
-  if (!stats) return null;
+  if (!stats) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh', color: isDarkMode ? '#94a3b8' : '#64748b' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <RefreshCw size={32} style={{ animation: 'spin 1s linear infinite' }} />
+        <span style={{ fontSize: '16px', fontWeight: '600' }}>Loading Data...</span>
+        <style>{`@keyframes spin { 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', animation: 'fadeIn 0.6s ease' }}>
@@ -222,40 +230,54 @@ const Dashboard = ({ isDarkMode }) => {
             </div>
           </div>
 
-          <div style={{ height: '300px', width: '100%', position: 'relative', marginTop: '20px', padding: '0 30px' }}>
-             <svg width="100%" height="100%" viewBox="0 0 1000 300" preserveAspectRatio="none" style={{ overflow: 'visible' }}>
-                <defs>
-                  <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.2" />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path d={stats.areaD} fill="url(#chartGrad)" />
-                <path d={stats.pathD} fill="none" stroke="#6366f1" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
-                {stats.chartPoints.map((p, i) => (
-                   <circle key={i} cx={p.x} cy={p.y} r="8" fill="#fff" stroke="#6366f1" strokeWidth="4" />
-                ))}
-             </svg>
-             <div style={{ 
-               position: 'relative', 
-               height: '20px', 
-               marginTop: '20px', 
-               color: theme.muted, 
-               fontSize: '11px', 
-               fontWeight: '950',
-               margin: '0 30px'
-             }}>
-                {stats.monthLabels.map((lbl, i) => (
-                  <span key={i} style={{ 
-                    position: 'absolute', 
-                    left: `${(i * 20)}%`, 
-                    transform: 'translateX(-50%)',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {lbl}
-                  </span>
-                ))}
-             </div>
+          <div style={{ height: '280px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '30px', position: 'relative' }}>
+             {/* Horizontal grid lines */}
+             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
+             <div style={{ position: 'absolute', top: '33%', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
+             <div style={{ position: 'absolute', top: '66%', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
+             <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
+
+             {stats.monthlyRev.map((val, i) => {
+                const heightPct = stats.maxRev > 0 ? (val / stats.maxRev) * 100 : 0;
+                
+                // Format currency beautifully (e.g. 1.2L, 50k)
+                let formattedVal = val.toString();
+                if (val >= 100000) formattedVal = (val / 100000).toFixed(2) + 'L';
+                else if (val >= 1000) formattedVal = (val / 1000).toFixed(1) + 'k';
+
+                const isCurrentMonth = i === 5;
+
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '14%', gap: '12px', zIndex: 1, height: '100%' }}>
+                     {/* Value Label */}
+                     <span style={{ 
+                       fontSize: '13px', 
+                       fontWeight: '900', 
+                       color: val > 0 ? (isCurrentMonth ? '#6366f1' : theme.text) : theme.muted, 
+                       opacity: val > 0 ? 1 : 0.4,
+                       marginTop: 'auto'
+                     }}>
+                       ₹{formattedVal}
+                     </span>
+                     
+                     {/* Bar Background */}
+                     <div style={{ height: '200px', width: '100%', maxWidth: '48px', display: 'flex', alignItems: 'flex-end', background: isDarkMode ? '#1e293b80' : '#f1f5f9', borderRadius: '12px', padding: '4px' }}>
+                        {/* Actual Bar */}
+                        <div style={{ 
+                          width: '100%', 
+                          height: `${Math.max(3, heightPct)}%`, 
+                          background: isCurrentMonth ? 'linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%)' : (isDarkMode ? 'linear-gradient(180deg, #475569 0%, #334155 100%)' : 'linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)'), 
+                          borderRadius: '8px',
+                          transition: 'height 1s cubic-bezier(0.4, 0, 0.2, 1)',
+                          boxShadow: isCurrentMonth ? '0 4px 12px rgba(99, 102, 241, 0.3)' : 'none'
+                        }} />
+                     </div>
+                     
+                     {/* Month Label */}
+                     <span style={{ fontSize: '12px', fontWeight: '800', color: isCurrentMonth ? theme.text : theme.muted }}>{stats.monthLabels[i]}</span>
+                  </div>
+                );
+             })}
           </div>
         </div>
 
@@ -268,11 +290,11 @@ const Dashboard = ({ isDarkMode }) => {
            
            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
               {[
-                { label: 'Weddings', count: stats.categorySplit.Wedding, color: '#6366f1' },
-                { label: 'Events / Commercial', count: stats.categorySplit.Event + stats.categorySplit.Commercial, color: '#f97316' },
-                { label: 'Other Shoots', count: 0, color: '#10b981' }
+                { label: 'Wedding', count: stats.categorySplit.Wedding, color: '#6366f1' },
+                { label: 'Prewedding', count: stats.categorySplit.Prewedding, color: '#f97316' },
+                { label: 'Commercial', count: stats.categorySplit.Commercial, color: '#10b981' }
               ].map((item, i) => {
-                const total = stats.categorySplit.Wedding + stats.categorySplit.Event + stats.categorySplit.Commercial;
+                const total = stats.categorySplit.Wedding + stats.categorySplit.Prewedding + stats.categorySplit.Commercial;
                 const percentage = total > 0 ? (item.count / total) * 100 : 0;
                 return (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -310,7 +332,10 @@ const Dashboard = ({ isDarkMode }) => {
                   </div>
                   <div>
                     <p style={{ margin: 0, fontSize: '14px', fontWeight: '900', color: theme.text }}>{inv.client?.name}</p>
-                    <p style={{ margin: 0, fontSize: '11px', color: theme.muted, fontWeight: '700' }}>INV#{inv.number} • {new Date(inv.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                    <p style={{ margin: 0, fontSize: '11px', color: theme.muted, fontWeight: '700' }}>INV#{inv.number} • {(() => {
+                      const d = new Date(inv.date);
+                      return isNaN(d.getTime()) ? 'Invalid Date' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                    })()}</p>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
