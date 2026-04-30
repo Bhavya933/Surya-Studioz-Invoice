@@ -161,7 +161,14 @@ const Dashboard = ({ isDarkMode }) => {
           monthLabels.push(target.toLocaleDateString('en-IN', { month: 'short' }).toUpperCase());
         }
         
-        const maxRev = Math.max(...monthlyRev, 100);
+        const actualMax = Math.max(...monthlyRev, 100);
+        let stepSize = 1000;
+        if (actualMax > 100000) stepSize = 50000;
+        else if (actualMax > 50000) stepSize = 25000;
+        else if (actualMax > 20000) stepSize = 20000;
+        else if (actualMax > 10000) stepSize = 10000;
+        
+        const maxRev = Math.ceil(actualMax / (stepSize * 3)) * (stepSize * 3) || (stepSize * 3);
 
         setStats({
           revenue: revCurr || projects.reduce((s, p) => s + (Number(p.budget) || 0), 0),
