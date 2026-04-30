@@ -230,54 +230,60 @@ const Dashboard = ({ isDarkMode }) => {
             </div>
           </div>
 
-          <div style={{ height: '280px', width: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: '30px', position: 'relative' }}>
-             {/* Horizontal grid lines */}
-             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
-             <div style={{ position: 'absolute', top: '33%', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
-             <div style={{ position: 'absolute', top: '66%', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
-             <div style={{ position: 'absolute', bottom: '32px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border, zIndex: 0 }} />
+          <div style={{ height: '300px', width: '100%', display: 'flex', gap: '15px', marginTop: '20px' }}>
+             {/* Y-Axis Labels */}
+             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: '200px', alignSelf: 'flex-end', paddingBottom: '4px', marginBottom: '44px' }}>
+                {[3, 2, 1, 0].map((step) => {
+                   const val = (stats.maxRev / 3) * step;
+                   let formatted = val >= 100000 ? (val / 100000).toFixed(1) + 'L' : (val >= 1000 ? (val / 1000).toFixed(0) + 'k' : val);
+                   return <span key={step} style={{ fontSize: '10px', fontWeight: '900', color: theme.muted, textAlign: 'right', minWidth: '35px' }}>{formatted}</span>
+                })}
+             </div>
 
-             {stats.monthlyRev.map((val, i) => {
-                const heightPct = stats.maxRev > 0 ? (val / stats.maxRev) * 100 : 0;
-                
-                // Format currency beautifully (e.g. 1.2L, 50k)
-                let formattedVal = val.toString();
-                if (val >= 100000) formattedVal = (val / 100000).toFixed(2) + 'L';
-                else if (val >= 1000) formattedVal = (val / 1000).toFixed(1) + 'k';
+             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', position: 'relative', height: '100%' }}>
+                {/* Horizontal grid lines */}
+                <div style={{ position: 'absolute', bottom: '244px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border + '50', zIndex: 0 }} />
+                <div style={{ position: 'absolute', bottom: '178px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border + '50', zIndex: 0 }} />
+                <div style={{ position: 'absolute', bottom: '112px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border + '50', zIndex: 0 }} />
+                <div style={{ position: 'absolute', bottom: '46px', left: 0, right: 0, borderTop: '1px dashed ' + theme.border + '50', zIndex: 0 }} />
 
-                const isCurrentMonth = i === 5;
+                {stats.monthlyRev.map((val, i) => {
+                   const heightPct = stats.maxRev > 0 ? (val / stats.maxRev) * 100 : 0;
+                   
+                   let formattedVal = val.toString();
+                   if (val >= 100000) formattedVal = (val / 100000).toFixed(2) + 'L';
+                   else if (val >= 1000) formattedVal = (val / 1000).toFixed(1) + 'k';
 
-                return (
-                  <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '14%', gap: '12px', zIndex: 1, height: '100%' }}>
-                     {/* Value Label */}
-                     <span style={{ 
-                       fontSize: '13px', 
-                       fontWeight: '900', 
-                       color: val > 0 ? (isCurrentMonth ? '#6366f1' : theme.text) : theme.muted, 
-                       opacity: val > 0 ? 1 : 0.4,
-                       marginTop: 'auto'
-                     }}>
-                       ₹{formattedVal}
-                     </span>
-                     
-                     {/* Bar Background */}
-                     <div style={{ height: '200px', width: '100%', maxWidth: '48px', display: 'flex', alignItems: 'flex-end', background: isDarkMode ? '#1e293b80' : '#f1f5f9', borderRadius: '12px', padding: '4px' }}>
-                        {/* Actual Bar */}
-                        <div style={{ 
-                          width: '100%', 
-                          height: `${Math.max(3, heightPct)}%`, 
-                          background: isCurrentMonth ? 'linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%)' : (isDarkMode ? 'linear-gradient(180deg, #475569 0%, #334155 100%)' : 'linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)'), 
-                          borderRadius: '8px',
-                          transition: 'height 1s cubic-bezier(0.4, 0, 0.2, 1)',
-                          boxShadow: isCurrentMonth ? '0 4px 12px rgba(99, 102, 241, 0.3)' : 'none'
-                        }} />
+                   const isCurrentMonth = i === 5;
+
+                   return (
+                     <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '14%', gap: '12px', zIndex: 1, height: '100%' }}>
+                        <span style={{ 
+                          fontSize: '12px', 
+                          fontWeight: '950', 
+                          color: val > 0 ? (isCurrentMonth ? '#6366f1' : theme.text) : theme.muted, 
+                          opacity: val > 0 ? 1 : 0.4,
+                          marginTop: 'auto'
+                        }}>
+                          ₹{formattedVal}
+                        </span>
+                        
+                        <div style={{ height: '200px', width: '100%', maxWidth: '44px', display: 'flex', alignItems: 'flex-end', background: isDarkMode ? '#1e293b80' : '#f1f5f9', borderRadius: '12px', padding: '4px' }}>
+                           <div style={{ 
+                             width: '100%', 
+                             height: `${Math.max(5, heightPct)}%`, 
+                             background: isCurrentMonth ? 'linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%)' : (isDarkMode ? 'linear-gradient(180deg, #475569 0%, #334155 100%)' : 'linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)'), 
+                             borderRadius: '8px',
+                             transition: 'height 1s cubic-bezier(0.4, 0, 0.2, 1)',
+                             boxShadow: isCurrentMonth ? '0 4px 12px rgba(99, 102, 241, 0.3)' : 'none'
+                           }} />
+                        </div>
+                        
+                        <span style={{ fontSize: '11px', fontWeight: '900', color: isCurrentMonth ? theme.text : theme.muted, marginBottom: '8px' }}>{stats.monthLabels[i]}</span>
                      </div>
-                     
-                     {/* Month Label */}
-                     <span style={{ fontSize: '12px', fontWeight: '800', color: isCurrentMonth ? theme.text : theme.muted }}>{stats.monthLabels[i]}</span>
-                  </div>
-                );
-             })}
+                   );
+                })}
+             </div>
           </div>
         </div>
 
