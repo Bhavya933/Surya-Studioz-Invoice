@@ -7,9 +7,9 @@ import {
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
-const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
+const ProjectCompleted = ({ isDarkMode, onOpenAnalysis, searchQuery: globalSearchQuery }) => {
   const [projects, setProjects] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   const theme = {
@@ -40,10 +40,10 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
     fetchProjects();
   }, []);
 
-  const filteredProjects = projects.filter(p => 
-    p.clientName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.title?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProjects = projects.filter(p => {
+    const q = (globalSearchQuery || localSearchQuery).toLowerCase();
+    return p.clientName?.toLowerCase().includes(q) || p.title?.toLowerCase().includes(q);
+  });
 
   const stats = {
     total: projects.length,
@@ -57,7 +57,21 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
   return (
     <div style={{ padding: '24px 0', minHeight: '100%', display: 'flex', flexDirection: 'column', gap: '28px', animation: 'fadeIn 0.5s ease' }}>
       <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes archiveFadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes rowSlide {
+          from { opacity: 0; transform: translateX(-15px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        .archive-card { animation: kpiEntrance 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+        .archive-row { animation: rowSlide 0.5s ease both; transition: all 0.3s ease; }
+        .archive-row:hover { background: ${isDarkMode ? '#3d4b5f' : '#f8fafc'} !important; transform: scale(1.005); }
+        @keyframes kpiEntrance {
+          from { opacity: 0; transform: scale(0.9); }
+          to { opacity: 1; transform: scale(1); }
+        }
       `}</style>
 
       {isLoading ? (
@@ -77,7 +91,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
           { label: 'Total Revenue', value: `₹${stats.revenue.toLocaleString()}`, icon: DollarSign, color: '#6366f1' },
           { label: 'Net Studio Margin', value: `₹${stats.margin.toLocaleString()}`, icon: Award, color: '#f59e0b' },
         ].map((card, idx) => (
-          <div key={idx} style={{ background: theme.card, padding: '24px', borderRadius: '24px', border: '1px solid ' + theme.border, display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+          <div key={idx} className="archive-card" style={{ animationDelay: `${idx * 0.1}s`, background: theme.card, padding: '24px', borderRadius: '24px', border: '1px solid ' + theme.border, display: 'flex', alignItems: 'center', gap: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
             <div style={{ background: `${card.color}15`, color: card.color, padding: '14px', borderRadius: '16px' }}>
               <card.icon size={24} />
             </div>
@@ -99,7 +113,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
           <Search size={18} color={theme.muted} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
           <input 
             type="text" placeholder="Search by client or project..." 
-            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
+            value={localSearchQuery} onChange={(e) => setLocalSearchQuery(e.target.value)} 
             style={{ width: '100%', padding: '12px 20px 12px 48px', borderRadius: '18px', border: '1px solid ' + theme.border, outline: 'none', background: theme.card, color: theme.text, fontSize: '14px', fontWeight: '700' }} 
           />
         </div>
@@ -112,18 +126,18 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
             <tr style={{ textAlign: 'left', color: theme.muted, fontSize: '11px', fontWeight: '900', letterSpacing: '0.05em' }}>
               <th style={{ padding: '12px 24px' }}>PROJECT IDENTITY</th>
               <th>CLIENT</th>
-              <th>BUDGET</th>
+              <th>EVENT DATE</th>
               <th>STUDIO MARGIN</th>
               <th>DELIVERED DATE</th>
               <th style={{ textAlign: 'right', paddingRight: '24px' }}>ACTION</th>
             </tr>
           </thead>
           <tbody>
-            {filteredProjects.map(p => {
+            {filteredProjects.map((p, idx) => {
                 const totalCost = (Number(p.team_price || p.teamPrice) || 0) + (Number(p.editor_price || p.editorPrice) || 0) + (Number(p.album_price || p.albumPrice) || 0);
                 const margin = (Number(p.budget) || 0) - totalCost;
               return (
-                <tr key={p.id} style={{ background: isDarkMode ? 'rgba(255,255,255,0.02)' : '#fff' }}>
+                <tr key={p.id} className="archive-row" style={{ background: isDarkMode ? 'rgba(255,255,255,0.02)' : '#fff', animationDelay: `${0.3 + (idx * 0.05)}s` }}>
                   <td style={{ padding: '16px 24px', borderTopLeftRadius: '16px', borderBottomLeftRadius: '16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                       <div style={{ width: '42px', height: '42px', borderRadius: '14px', background: '#10b98110', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
@@ -136,7 +150,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
                     </div>
                   </td>
                   <td style={{ fontWeight: '800', color: theme.text, fontSize: '14px' }}>{p.clientName}</td>
-                  <td style={{ fontWeight: '950', color: theme.text, fontSize: '14px' }}>₹{Number(p.budget || 0).toLocaleString()}</td>
+                  <td style={{ fontWeight: '950', color: theme.text, fontSize: '14px' }}>{new Date(p.event_date || p.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
                   <td>
                     <span style={{ 
                       padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: '950',
@@ -146,7 +160,7 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
                       ₹{margin.toLocaleString()}
                     </span>
                   </td>
-                  <td style={{ fontSize: '13px', fontWeight: '750', color: theme.muted }}>{p.deadline || 'N/A'}</td>
+                  <td style={{ fontSize: '13px', fontWeight: '750', color: theme.muted }}>{p.deadline ? new Date(p.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Pending'}</td>
                   <td style={{ textAlign: 'right', paddingRight: '20px', borderTopRightRadius: '16px', borderBottomRightRadius: '16px' }}>
                     <button 
                       onClick={() => onOpenAnalysis(p.clientName)}
@@ -176,6 +190,76 @@ const ProjectCompleted = ({ isDarkMode, onOpenAnalysis }) => {
       </div>
       </>
       )}
+      {/* HIDDEN PRINT REPORT FOR ARCHIVE PDF DOWNLOAD */}
+      <div id="archive-report-root" style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div id="archive-report-content" style={{ width: '1000px', padding: '40px', background: '#fff', color: '#111827', fontFamily: 'Inter, system-ui, sans-serif' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #f3f4f6', paddingBottom: '24px', marginBottom: '40px' }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '26px', fontWeight: '900', color: '#111827', letterSpacing: '-0.02em' }}>Project Archive & Financials</h1>
+              <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Generated on {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: '120px' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Delivered</p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '900', color: '#10b981' }}>{projects.length} Projects</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', marginBottom: '40px' }}>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Completed Shoots</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900' }}>{stats.total}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Total Revenue</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900' }}>₹{stats.revenue.toLocaleString()}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Net Studio Margin</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#10b981' }}>₹{stats.margin.toLocaleString()}</h2>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '16px', borderLeft: '4px solid #f97316', paddingLeft: '12px' }}>Delivered Projects Registry</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#f9fafb' }}>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>PROJECT TITLE</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>CLIENT</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>BUDGET</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>MARGIN</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>DELIVERED</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredProjects.map((p, i) => {
+                const costs = (Number(p.team_price || p.teamPrice) || 0) + (Number(p.editor_price || p.editorPrice) || 0) + (Number(p.album_price || p.albumPrice) || 0);
+                const margin = (Number(p.budget) || 0) - costs;
+                return (
+                  <tr key={i}>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb' }}>
+                      <div style={{ fontWeight: '700', fontSize: '13px' }}>{p.title || 'Untitled'}</div>
+                      <div style={{ fontSize: '11px', color: '#6b7280' }}>#{String(p.id).slice(-6)}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px' }}>{p.clientName}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px', fontWeight: '700' }}>₹{Number(p.budget || 0).toLocaleString()}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px', fontWeight: '800', color: margin >= 0 ? '#10b981' : '#ef4444' }}>₹{margin.toLocaleString()}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '12px' }}>{p.deadline || 'N/A'}</td>
+                  </tr>
+                );
+              })}
+              {filteredProjects.length === 0 && (
+                <tr>
+                  <td colSpan="5" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af', border: '1px solid #e5e7eb' }}>No projects found in archive.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: '50px', paddingTop: '20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Project Archive Report • Surya Studioz</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

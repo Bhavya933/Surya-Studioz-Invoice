@@ -5,6 +5,33 @@ import {
   Camera, User, Lightbulb, Clock, Inbox, RefreshCw
 } from 'lucide-react';
 
+const ConfirmModal = ({ isOpen, onConfirm, onCancel, title, message, isDarkMode }) => {
+  if (!isOpen) return null;
+  const theme = {
+    card: isDarkMode ? '#1e293b' : '#fff',
+    text: isDarkMode ? '#f8fafc' : '#111',
+    muted: isDarkMode ? '#94a3b8' : '#666',
+    border: isDarkMode ? '#334155' : '#f1f5f9',
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: isDarkMode ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+      <div style={{ background: theme.card, borderRadius: '24px', width: '100%', maxWidth: '400px', padding: '32px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', textAlign: 'center', position: 'relative', border: '1px solid ' + theme.border, animation: 'modalScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+        <button onClick={onCancel} style={{ position: 'absolute', right: '16px', top: '16px', background: 'none', border: 'none', color: theme.muted, cursor: 'pointer', padding: '4px' }}><X size={20} /></button>
+        <div style={{ background: isDarkMode ? '#dc262620' : '#fee2e2', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <Trash2 size={24} color="#dc2626" />
+        </div>
+        <h3 style={{ fontSize: '20px', fontWeight: '800', color: theme.text, margin: '0 0 12px 0' }}>{title}</h3>
+        <p style={{ fontSize: '15px', color: theme.muted, margin: '0 0 28px 0', lineHeight: '1.5' }}>{message}</p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: '14px', background: isDarkMode ? '#334155' : '#f3f4f6', color: theme.text, border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ flex: 1, padding: '14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CATEGORIES = [
   { id: 'general', label: 'General', color: '#64748b', bg: '#f1f5f9', icon: Inbox },
   { id: 'creative', label: 'Creative', color: '#6366f1', bg: '#eef2ff', icon: Lightbulb },
@@ -14,7 +41,7 @@ const CATEGORIES = [
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
-const Notes = ({ isDarkMode }) => {
+const Notes = ({ isDarkMode, searchQuery: globalSearchQuery }) => {
   const theme = {
     bg: isDarkMode ? '#1e293b' : '#f8fafc',
     card: isDarkMode ? '#334155' : '#ffffff',
@@ -28,7 +55,8 @@ const Notes = ({ isDarkMode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [localSearchQuery, setLocalSearchQuery] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   
   const [formData, setFormData] = useState({
     title: '',
@@ -79,14 +107,19 @@ const Notes = ({ isDarkMode }) => {
     }
   };
 
-  const deleteNote = async (id) => {
-    if (window.confirm('Delete this note?')) {
-      try {
-        await fetch(`${API_URL}/notes/${id}`, { method: 'DELETE' });
-        fetchNotes();
-      } catch (err) {
-        alert('Delete failed');
-      }
+  const deleteNote = (id) => {
+    setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handleConfirmDelete = async () => {
+    const id = confirmDelete.id;
+    try {
+      await fetch(`${API_URL}/notes/${id}`, { method: 'DELETE' });
+      fetchNotes();
+      setConfirmDelete({ isOpen: false, id: null });
+    } catch (err) {
+      alert('Delete failed');
+      setConfirmDelete({ isOpen: false, id: null });
     }
   };
 
@@ -111,10 +144,10 @@ const Notes = ({ isDarkMode }) => {
     setEditingNote(null);
   };
 
-  const filteredNotes = notes.filter(n => 
-    n.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    n.content.toLowerCase().includes(searchQuery.toLowerCase())
-  ).sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+  const filteredNotes = notes.filter(n => {
+    const q = (globalSearchQuery || localSearchQuery).toLowerCase();
+    return n.title.toLowerCase().includes(q) || n.content.toLowerCase().includes(q);
+  }).sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
 
   const NoteCard = ({ note }) => {
     const catInfo = CATEGORIES.find(c => c.id === note.category) || CATEGORIES[0];
@@ -136,7 +169,7 @@ const Notes = ({ isDarkMode }) => {
         animation: 'notePop 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
         overflow: 'hidden'
       }}
-      className="note-card"
+      className="note-card hover-lift"
       >
         {/* Category Indicator Line */}
         <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: '4px', background: catInfo.color }} />
@@ -174,14 +207,34 @@ const Notes = ({ isDarkMode }) => {
           </div>
         </div>
 
-        <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '900', color: theme.text, lineHeight: '1.3' }}>{note.title}</h3>
-        <p style={{ margin: 0, fontSize: '15px', color: theme.muted, lineHeight: '1.7', flex: 1 }}>{note.content}</p>
+        <h3 style={{ 
+          margin: 0, fontSize: '20px', fontWeight: '900', color: theme.text, lineHeight: '1.3',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+        }}>
+          {note.title}
+        </h3>
+        <p style={{ 
+          margin: 0, fontSize: '15px', color: theme.muted, lineHeight: '1.7', flex: 1,
+          display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          wordBreak: 'break-word', overflowWrap: 'anywhere'
+        }}>
+          {note.content}
+        </p>
       </div>
     );
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px', height: '100%' }}>
+      <ConfirmModal 
+        isOpen={confirmDelete.isOpen} 
+        isDarkMode={isDarkMode}
+        title="Delete Note?"
+        message="Are you sure you want to delete this note? This action cannot be undone."
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null })}
+        onConfirm={handleConfirmDelete}
+      />
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '28px', fontWeight: '900', color: theme.text, margin: '0 0 6px 0' }}>Creative Studio Notes</h1>
@@ -193,8 +246,8 @@ const Notes = ({ isDarkMode }) => {
             <input 
               type="text" 
               placeholder="Filter your notes..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={localSearchQuery}
+              onChange={(e) => setLocalSearchQuery(e.target.value)}
               style={{ padding: '14px 16px 14px 48px', borderRadius: '20px', border: '1px solid ' + theme.border, width: '100%', fontSize: '15px', outline: 'none', background: theme.inputBg, color: theme.text, transition: '0.2s', boxShadow: '0 2px 10px rgba(0,0,0,0.02)' }}
             />
           </div>
@@ -220,7 +273,7 @@ const Notes = ({ isDarkMode }) => {
           </div>
         </div>
       ) : filteredNotes.length > 0 ? (
-        <div style={{ 
+        <div className="stagger-list" style={{ 
           display: 'grid', 
           gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', 
           gap: '28px' 
@@ -247,105 +300,122 @@ const Notes = ({ isDarkMode }) => {
           display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1200, padding: '24px'
         }}>
           <div style={{
-            background: theme.card, width: '100%', maxWidth: '750px', padding: '54px', borderRadius: '48px', position: 'relative',
-            boxShadow: '0 40px 80px -12px rgba(0, 0, 0, 0.35)', display: 'flex', flexDirection: 'column',
-            animation: 'modalScale 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
-            maxHeight: '90vh', overflowY: 'auto', border: '1px solid ' + theme.border
+            background: theme.card, width: '100%', maxWidth: '850px', padding: '48px', borderRadius: '32px', position: 'relative',
+            boxShadow: '0 20px 60px -10px rgba(0, 0, 0, 0.4)', display: 'flex', flexDirection: 'column',
+            animation: 'modalScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            maxHeight: '90vh', overflowY: 'auto', border: '1px solid ' + theme.border, boxSizing: 'border-box'
           }}>
-            <button onClick={closeModal} style={{ position: 'absolute', top: '32px', right: '32px', border: 'none', background: theme.bg, padding: '12px', borderRadius: '18px', cursor: 'pointer', color: theme.muted, transition: '0.2s', border: '1px solid ' + theme.border }}>
-              <X size={26} />
+            <button onClick={closeModal} style={{ position: 'absolute', top: '28px', right: '28px', border: 'none', background: 'transparent', padding: '10px', borderRadius: '12px', cursor: 'pointer', color: theme.muted, transition: '0.2s', border: '1px solid ' + theme.border }}>
+              <X size={24} />
             </button>
 
-            <div style={{ marginBottom: '44px', textAlign: 'center' }}>
-              <h2 style={{ fontSize: '34px', fontWeight: '900', color: theme.text, margin: '0 0 12px 0' }}>
-                {editingNote ? 'Refine Your Studio Note' : 'Draft a New Creative Idea'}
+            <div style={{ marginBottom: '40px' }}>
+              <h2 style={{ fontSize: '28px', fontWeight: '900', color: theme.text, margin: '0 0 8px 0' }}>
+                {editingNote ? 'Refine Studio Note' : 'Draft New Idea'}
               </h2>
-              <p style={{ color: theme.muted, fontSize: '17px', fontWeight: '500' }}>
-                {editingNote ? 'Keep your studio records up to date' : 'Capture your professional creativity before it fades'}
+              <p style={{ color: theme.muted, fontSize: '15px', margin: 0, fontWeight: '500' }}>
+                {editingNote ? 'Update your note details below' : 'Capture your professional creativity in detail'}
               </p>
             </div>
 
             <form onSubmit={handleAddOrEdit} style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '32px' }}>
-                 {/* Left Column in Form */}
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: theme.text, marginBottom: '12px', letterSpacing: '0.05em' }}>NOTE TITLE</label>
-                      <input required type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} style={{ width: '100%', padding: '18px 22px', borderRadius: '22px', border: '1px solid ' + theme.border, outline: 'none', background: theme.bg, color: theme.text, fontSize: '16px', fontWeight: '700' }} placeholder="e.g. Wedding Color Schemes..." />
-                    </div>
-
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: theme.text, marginBottom: '16px', letterSpacing: '0.05em' }}>ASSIGN CATEGORY</label>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        {CATEGORIES.map(cat => {
-                          const CatIcon = cat.icon;
-                          return (
-                            <div 
-                              key={cat.id}
-                              onClick={() => setFormData({ ...formData, category: cat.id })}
-                              style={{ 
-                                padding: '16px 12px', borderRadius: '22px', cursor: 'pointer', fontSize: '14px', fontWeight: '800',
-                                background: formData.category === cat.id ? cat.color : theme.bg,
-                                color: formData.category === cat.id ? '#fff' : theme.muted,
-                                display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.3s',
-                                border: `2px solid ${formData.category === cat.id ? cat.color : theme.border}`
-                              }}
-                            >
-                              <div style={{ background: formData.category === cat.id ? 'rgba(255,255,255,0.2)' : theme.card, padding: '6px', borderRadius: '10px' }}>
-                                <CatIcon size={18} />
-                              </div>
-                              {cat.label}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                 </div>
-
-                 {/* Right Column in Form */}
-                 <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '13px', fontWeight: '900', color: theme.text, marginBottom: '12px', letterSpacing: '0.05em' }}>DETAILED CONTENT</label>
-                      <textarea 
-                        required
-                        rows={7}
-                        value={formData.content} 
-                        onChange={(e) => setFormData({ ...formData, content: e.target.value })} 
-                        style={{ width: '100%', padding: '22px', borderRadius: '28px', border: '1px solid ' + theme.border, outline: 'none', resize: 'none', fontFamily: 'inherit', background: theme.bg, color: theme.text, fontSize: '16px', lineHeight: '1.7' }} 
-                        placeholder="Share your full professional story here..." 
-                      />
-                    </div>
-                 </div>
-              </div>
-
-               <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-                <div 
-                  onClick={() => setFormData({ ...formData, isPinned: !formData.isPinned })}
-                  style={{ 
-                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                    padding: '18px 24px', borderRadius: '24px', background: formData.isPinned ? (isDarkMode ? '#f9731630' : '#fff7ed') : theme.bg, 
-                    cursor: 'pointer', transition: '0.3s', border: `1px solid ${formData.isPinned ? '#f97316' : 'transparent'}`
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                     <div style={{ background: formData.isPinned ? '#f97316' : theme.muted, padding: '10px', borderRadius: '14px', color: '#fff' }}>
-                        <Pin size={22} fill="currentColor" />
-                     </div>
-                     <span style={{ fontSize: '16px', fontWeight: '800', color: formData.isPinned ? '#f97316' : theme.muted }}>Pin this to your top shelf</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px' }}>
+                {/* Left Column */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '800', color: theme.muted, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Note Title</label>
+                    <input required type="text" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} style={{ width: '100%', padding: '18px 20px', borderRadius: '16px', border: '1px solid ' + theme.border, outline: 'none', background: theme.bg, color: theme.text, fontSize: '16px', fontWeight: '700', transition: 'border-color 0.2s', boxSizing: 'border-box' }} placeholder="e.g. Wedding Color Schemes..." />
                   </div>
-                  <div style={{ width: '50px', height: '26px', background: formData.isPinned ? '#f97316' : (isDarkMode ? '#475569' : '#e2e8f0'), borderRadius: '13px', position: 'relative', transition: '0.3s' }}>
-                     <div style={{ position: 'absolute', top: '3.5px', left: formData.isPinned ? '26px' : '4px', width: '19px', height: '19px', background: '#fff', borderRadius: '50%', transition: '0.3s cubic-bezier(0.4, 0, 0.2, 1)' }} />
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '13px', fontWeight: '800', color: theme.muted, marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Category</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                      {CATEGORIES.map(cat => {
+                        const CatIcon = cat.icon;
+                        const isSelected = formData.category === cat.id;
+                        return (
+                          <div 
+                            key={cat.id}
+                            onClick={() => setFormData({ ...formData, category: cat.id })}
+                            style={{ 
+                              padding: '16px 14px', borderRadius: '16px', cursor: 'pointer', fontSize: '14px', fontWeight: '800',
+                              background: isSelected ? cat.color : theme.bg,
+                              color: isSelected ? '#fff' : theme.muted,
+                              display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.2s',
+                              border: `1px solid ${isSelected ? cat.color : theme.border}`, boxSizing: 'border-box'
+                            }}
+                          >
+                            <div style={{ background: isSelected ? 'rgba(255,255,255,0.2)' : theme.card, padding: '8px', borderRadius: '12px' }}>
+                              <CatIcon size={20} />
+                            </div>
+                            {cat.label}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                <button type="submit" style={{ flex: 1, background: '#f97316', color: '#fff', border: 'none', padding: '20px', borderRadius: '24px', fontWeight: '900', fontSize: '18px', cursor: 'pointer', boxShadow: '0 12px 35px rgba(249, 115, 22, 0.4)', transition: '0.3s ease' }} className="save-btn">
-                  {editingNote ? 'Update Note Entry' : 'Initialize Note Entry'}
+                {/* Right Column */}
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ display: 'block', fontSize: '13px', fontWeight: '800', color: theme.muted, marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Detailed Content</label>
+                  <textarea 
+                    required
+                    value={formData.content} 
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })} 
+                    style={{ width: '100%', flex: 1, minHeight: '200px', padding: '20px', borderRadius: '16px', border: '1px solid ' + theme.border, outline: 'none', resize: 'vertical', fontFamily: 'inherit', background: theme.bg, color: theme.text, fontSize: '16px', lineHeight: '1.6', boxSizing: 'border-box' }} 
+                    placeholder="Share your full professional story here..." 
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '24px', marginTop: '16px', paddingTop: '32px', borderTop: '1px solid ' + theme.border }}>
+                <div 
+                  onClick={() => setFormData({ ...formData, isPinned: !formData.isPinned })}
+                  style={{ 
+                    flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                    padding: '0 24px', borderRadius: '16px', background: formData.isPinned ? '#f97316' : theme.bg, 
+                    cursor: 'pointer', transition: '0.2s', border: `1px solid ${formData.isPinned ? '#f97316' : theme.border}`,
+                    color: formData.isPinned ? '#fff' : theme.muted
+                  }}
+                  title="Pin Note"
+                >
+                  <Pin size={24} fill={formData.isPinned ? "currentColor" : "none"} />
+                </div>
+
+                <button type="submit" style={{ flex: 1, background: '#10b981', color: '#fff', border: 'none', padding: '20px', borderRadius: '16px', fontWeight: '800', fontSize: '18px', cursor: 'pointer', transition: '0.2s ease', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }} className="save-btn">
+                  <Check size={22} strokeWidth={3} /> {editingNote ? 'Update Note' : 'Save Note Entry'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Hidden Print/PDF Template */}
+      <div style={{ position: 'absolute', top: '-9999px', left: '-9999px' }}>
+        <div id="notes-report-content" style={{ padding: '60px', background: '#ffffff', color: '#000000', width: '1100px', fontFamily: 'Arial, sans-serif' }}>
+          <div style={{ textAlign: 'center', marginBottom: '40px', borderBottom: '2px solid #f1f5f9', paddingBottom: '20px' }}>
+            <h1 style={{ fontSize: '32px', fontWeight: '900', margin: '0 0 8px 0', color: '#0f172a' }}>Creative Studio Notes</h1>
+            <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>Generated on {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '40px', paddingBottom: '20px' }}>
+            {filteredNotes.map(note => (
+              <div key={note.id} style={{ marginBottom: '30px', pageBreakInside: 'avoid' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '20px', fontWeight: '800', color: '#0f172a' }}>{note.title}</h3>
+                  <span style={{ fontSize: '13px', color: '#64748b', fontWeight: '600' }}>{new Date(note.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#f97316', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+                  {CATEGORIES.find(c => c.id === note.category)?.label || 'General'}
+                </div>
+                <p style={{ margin: 0, fontSize: '15px', lineHeight: '1.6', color: '#334155', whiteSpace: 'pre-wrap' }}>{note.content}</p>
+                <div style={{ marginTop: '24px', height: '1px', background: '#f1f5f9', width: '100%' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       <style>
         {`

@@ -14,7 +14,34 @@ const ROLES = [
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
-const StudioTeam = ({ isDarkMode }) => {
+const ConfirmModal = ({ isOpen, onConfirm, onCancel, title, message, isDarkMode }) => {
+  if (!isOpen) return null;
+  const theme = {
+    card: isDarkMode ? '#1e293b' : '#fff',
+    text: isDarkMode ? '#f8fafc' : '#111',
+    muted: isDarkMode ? '#94a3b8' : '#666',
+    border: isDarkMode ? '#334155' : '#f1f5f9',
+  };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: isDarkMode ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+      <div style={{ background: theme.card, borderRadius: '24px', width: '100%', maxWidth: '400px', padding: '32px', boxShadow: '0 20px 50px rgba(0,0,0,0.2)', textAlign: 'center', position: 'relative', border: '1px solid ' + theme.border, animation: 'modalScale 0.3s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+        <button onClick={onCancel} style={{ position: 'absolute', right: '16px', top: '16px', background: 'none', border: 'none', color: theme.muted, cursor: 'pointer', padding: '4px' }}><X size={20} /></button>
+        <div style={{ background: isDarkMode ? '#dc262620' : '#fee2e2', width: '56px', height: '56px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+          <Trash2 size={24} color="#dc2626" />
+        </div>
+        <h3 style={{ fontSize: '20px', fontWeight: '800', color: theme.text, margin: '0 0 12px 0' }}>{title}</h3>
+        <p style={{ fontSize: '15px', color: theme.muted, margin: '0 0 28px 0', lineHeight: '1.5' }}>{message}</p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={onCancel} style={{ flex: 1, padding: '14px', background: isDarkMode ? '#334155' : '#f3f4f6', color: theme.text, border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Cancel</button>
+          <button onClick={onConfirm} style={{ flex: 1, padding: '14px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', transition: '0.2s' }}>Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const StudioTeam = ({ isDarkMode, searchQuery: globalSearchQuery }) => {
   const theme = {
     bg: isDarkMode ? '#1e293b' : '#f8fafc',
     card: isDarkMode ? '#334155' : '#ffffff',
@@ -28,8 +55,7 @@ const StudioTeam = ({ isDarkMode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  
+  const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null });
   const [formData, setFormData] = useState({
     name: '',
     role: 'photographer',
@@ -42,7 +68,6 @@ const StudioTeam = ({ isDarkMode }) => {
     accountNumber: '',
     ifscCode: '',
     upiId: '',
-    daily_rate: 0,
     status: 'Active'
   });
 
@@ -75,7 +100,6 @@ const StudioTeam = ({ isDarkMode }) => {
     const dataToSave = { 
       ...formData, 
       leaderId: formData.isLeader ? '' : formData.leaderId,
-      daily_rate: parseFloat(formData.daily_rate) || 0,
       status: formData.status || 'Active'
     };
     
@@ -96,14 +120,19 @@ const StudioTeam = ({ isDarkMode }) => {
     }
   };
 
-  const deleteMember = async (id) => {
-    if (window.confirm('Are you sure you want to remove this team member?')) {
-      try {
-        await fetch(`${API_URL}/team/${id}`, { method: 'DELETE' });
-        fetchMembers();
-      } catch (err) {
-        alert('Delete failed');
-      }
+  const deleteMember = (id) => {
+    setConfirmDelete({ isOpen: true, id });
+  };
+
+  const handleConfirmDelete = async () => {
+    const id = confirmDelete.id;
+    try {
+      await fetch(`${API_URL}/team/${id}`, { method: 'DELETE' });
+      fetchMembers();
+      setConfirmDelete({ isOpen: false, id: null });
+    } catch (err) {
+      alert('Delete failed');
+      setConfirmDelete({ isOpen: false, id: null });
     }
   };
 
@@ -113,7 +142,7 @@ const StudioTeam = ({ isDarkMode }) => {
       setFormData({ ...member });
     } else {
       setEditingMember(null);
-      setFormData({ name: '', role: 'photographer', email: '', phone: '', image: '', leaderId: '', isLeader: false, bankName: '', accountNumber: '', ifscCode: '', upiId: '', daily_rate: 0, status: 'Active' });
+      setFormData({ name: '', role: 'photographer', email: '', phone: '', image: '', leaderId: '', isLeader: false, bankName: '', accountNumber: '', ifscCode: '', upiId: '', status: 'Active' });
     }
     setIsModalOpen(true);
   };
@@ -123,19 +152,36 @@ const StudioTeam = ({ isDarkMode }) => {
     setEditingMember(null);
   };
 
-  const searchingMembers = members.filter(m => 
-    m.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    m.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const searchingMembers = members.filter(m => {
+    const q = (globalSearchQuery || '').toLowerCase();
+    const roleInfo = ROLES.find(r => r.id === m.role);
+    return m.name.toLowerCase().includes(q) || 
+           (m.email || '').toLowerCase().includes(q) ||
+           (roleInfo?.label || '').toLowerCase().includes(q);
+  });
 
-  const teamLeaders = members.filter(m => m.isLeader);
+  const teamLeaders = members.filter(m => m.isLeader).filter(leader => {
+    const q = (globalSearchQuery || '').toLowerCase();
+    if (!q) return true;
+    
+    // Leader matches?
+    const leaderMatch = leader.name.toLowerCase().includes(q) || (leader.email || '').toLowerCase().includes(q);
+    if (leaderMatch) return true;
+    
+    // Any member in this team matches?
+    const hasMatchingMember = members.some(m => 
+      m.leaderId === leader.id && 
+      (m.name.toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q))
+    );
+    return hasMatchingMember;
+  });
 
   const MemberCard = ({ member }) => {
     const roleInfo = ROLES.find(r => r.id === member.role) || ROLES[0];
     const RoleIcon = roleInfo.icon;
     
     return (
-      <div style={{
+      <div className="hover-lift" style={{
         background: member.isLeader ? theme.card : (isDarkMode ? '#33415580' : '#ffffff80'),
         backdropFilter: 'blur(8px)',
         border: `1px solid ${member.isLeader ? (isDarkMode ? '#f59e0b40' : '#f1f5f9') : theme.border}`,
@@ -159,7 +205,7 @@ const StudioTeam = ({ isDarkMode }) => {
         </div>
 
         {/* Leader Badge */}
-        {member.isLeader && (
+        {!!member.isLeader && (
           <div style={{ 
             position: 'absolute', 
             top: '12px', 
@@ -214,7 +260,7 @@ const StudioTeam = ({ isDarkMode }) => {
         </div>
 
         {/* Account Details for Leaders */}
-        {member.isLeader && (
+        {!!member.isLeader && (
           <div style={{ 
             width: '100%', 
             marginTop: '16px', 
@@ -234,7 +280,7 @@ const StudioTeam = ({ isDarkMode }) => {
             <div style={{ fontSize: '11px', fontWeight: '700', color: theme.text }}>
               <span style={{ color: theme.muted }}>IFSC:</span> {member.ifscCode || 'N/A'}
             </div>
-            {member.upiId && (
+            {!!member.upiId && (
               <div style={{ fontSize: '11px', fontWeight: '700', color: '#6366f1' }}>
                 <span style={{ color: theme.muted }}>UPI:</span> {member.upiId}
               </div>
@@ -259,6 +305,14 @@ const StudioTeam = ({ isDarkMode }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <ConfirmModal 
+        isOpen={confirmDelete.isOpen} 
+        isDarkMode={isDarkMode}
+        title="Remove Team Member?"
+        message="Are you sure you want to remove this team member? This action cannot be undone."
+        onCancel={() => setConfirmDelete({ isOpen: false, id: null })}
+        onConfirm={handleConfirmDelete}
+      />
       {/* Header Actions */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -266,16 +320,7 @@ const StudioTeam = ({ isDarkMode }) => {
           <p style={{ color: theme.muted, fontSize: '14px', margin: 0 }}>Manage leads and their associated team members</p>
         </div>
         <div style={{ display: 'flex', gap: '16px' }}>
-          <div style={{ position: 'relative', width: '280px' }}>
-            <Search size={20} color={theme.muted} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)' }} />
-            <input 
-              type="text" 
-              placeholder="Search by name or email..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ padding: '12px 14px 12px 42px', borderRadius: '16px', border: '1px solid ' + theme.border, width: '100%', fontSize: '14px', outline: 'none', background: theme.inputBg, color: theme.text, boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}
-            />
-          </div>
+
           <button 
             onClick={() => openModal()}
             style={{
@@ -317,7 +362,7 @@ const StudioTeam = ({ isDarkMode }) => {
             </div>
           </div>
           
-          <div style={{ 
+          <div className="stagger-list" style={{ 
             display: 'flex', 
             gap: '20px', 
             overflowX: 'auto', 
@@ -354,7 +399,7 @@ const StudioTeam = ({ isDarkMode }) => {
             Independent / Unassigned
             <div style={{ height: '2px', flex: 1, background: theme.border }} />
           </h3>
-          <div style={{ 
+          <div className="stagger-list" style={{ 
             display: 'flex', 
             gap: '20px', 
             overflowX: 'auto', 
@@ -442,7 +487,7 @@ const StudioTeam = ({ isDarkMode }) => {
                   </div>
                 </div>
                 <div style={{ width: '24px', height: '24px', borderRadius: '8px', border: '2px solid ' + theme.muted, background: formData.isLeader ? '#f59e0b' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
-                  {formData.isLeader && <Check size={16} strokeWidth={4} />}
+                  {!!formData.isLeader && <Check size={16} strokeWidth={4} />}
                 </div>
               </div>
 
@@ -480,11 +525,7 @@ const StudioTeam = ({ isDarkMode }) => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '800', color: theme.muted, marginBottom: '8px' }}>Daily Rate (₹)</label>
-                  <input type="number" value={formData.daily_rate} onChange={(e) => setFormData({ ...formData, daily_rate: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: '14px', border: '1px solid ' + theme.border, fontSize: '14px', outline: 'none', background: theme.bg, color: theme.text }} placeholder="0" />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '14px', fontWeight: '800', color: theme.muted, marginBottom: '8px' }}>Member Status</label>
                   <select value={formData.status} onChange={(e) => setFormData({ ...formData, status: e.target.value })} style={{ width: '100%', padding: '12px 16px', borderRadius: '14px', border: '1px solid ' + theme.border, fontSize: '14px', outline: 'none', background: theme.bg, color: theme.text }}>
@@ -495,7 +536,7 @@ const StudioTeam = ({ isDarkMode }) => {
               </div>
 
               {/* Account Details Section for Leaders */}
-              {formData.isLeader && (
+              {!!formData.isLeader && (
                 <div style={{ background: isDarkMode ? '#1e293b50' : '#f8fafc', padding: '24px', borderRadius: '20px', border: '1px solid ' + theme.border, display: 'flex', flexDirection: 'column', gap: '16px' }}>
                   <p style={{ margin: 0, fontSize: '12px', fontWeight: '900', color: '#f59e0b', letterSpacing: '0.05em' }}>PAYMENT & BANKING DETAILS</p>
                   
@@ -527,9 +568,119 @@ const StudioTeam = ({ isDarkMode }) => {
                 {editingMember ? 'Save Changes' : 'Create Team Member'}
               </button>
             </form>
-          </div>
+        </div>
+      </div>
+    )}
+
+      {/* No Results Placeholder */}
+      {teamLeaders.length === 0 && searchingMembers.filter(m => !m.leaderId && !m.isLeader).length === 0 && (
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          padding: '80px 0',
+          color: theme.muted,
+          background: theme.card,
+          borderRadius: '32px',
+          border: '1px solid ' + theme.border
+        }}>
+          <Users size={48} style={{ marginBottom: '16px', opacity: 0.5 }} />
+          <h3 style={{ margin: '0 0 8px 0', color: theme.text }}>No matching team members found</h3>
+          <p style={{ margin: 0, fontSize: '14px' }}>Try adjusting your search query</p>
         </div>
       )}
+      {/* HIDDEN PRINT REPORT FOR TEAM PDF DOWNLOAD */}
+      <div id="team-report-root" style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div id="team-report-content" style={{ width: '1000px', padding: '40px', background: '#fff', color: '#111827', fontFamily: 'Inter, system-ui, sans-serif' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #f3f4f6', paddingBottom: '24px', marginBottom: '40px' }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '26px', fontWeight: '900', color: '#111827', letterSpacing: '-0.02em' }}>Studio Team Registry & Roster</h1>
+              <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Generated on {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: '120px' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Force</p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '900', color: '#f97316' }}>{members.length} Members</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px', marginBottom: '40px' }}>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Team Leaders</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#f97316' }}>{members.filter(m => m.isLeader).length}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Photographers</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900' }}>{members.filter(m => m.role === 'photographer').length}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Videographers</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#10b981' }}>{members.filter(m => m.role === 'videographer').length}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Editors</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#6366f1' }}>{members.filter(m => m.role === 'editor').length}</h2>
+            </div>
+          </div>
+
+          {teamLeaders.map((leader, lIdx) => (
+            <div key={lIdx} style={{ marginBottom: '32px' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '900', marginBottom: '12px', background: '#f9fafb', padding: '10px 16px', borderLeft: '4px solid #f97316', display: 'flex', justifyContent: 'space-between' }}>
+                <span>Team {leader.name.split(' ')[0]} (Lead by {leader.name})</span>
+                <span style={{ fontSize: '11px', color: '#6b7280' }}>BANK: {leader.bankName || 'N/A'} • ACC: {leader.accountNumber || 'N/A'}</span>
+              </h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '2px solid #f3f4f6' }}>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>NAME</th>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>ROLE</th>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>CONTACT</th>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>STATUS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[leader, ...members.filter(m => m.leaderId === leader.id && !m.isLeader)].map((m, mIdx) => (
+                    <tr key={mIdx} style={{ borderBottom: '1px solid #f9fafb' }}>
+                      <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: '700' }}>{m.name} {!!m.isLeader && <span style={{ fontSize: '9px', color: '#f97316' }}>(LEAD)</span>}</td>
+                      <td style={{ padding: '10px 12px', fontSize: '12px' }}>{ROLES.find(r => r.id === m.role)?.label}</td>
+                      <td style={{ padding: '10px 12px', fontSize: '12px' }}>{m.phone}</td>
+                      <td style={{ padding: '10px 12px', fontSize: '11px', fontWeight: '800', color: m.status === 'Active' ? '#10b981' : '#ef4444' }}>{m.status?.toUpperCase()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+
+          {members.filter(m => !m.leaderId && !m.isLeader).length > 0 && (
+            <div>
+              <h3 style={{ fontSize: '15px', fontWeight: '900', marginBottom: '12px', background: '#f9fafb', padding: '10px 16px', borderLeft: '4px solid #64748b' }}>Independent Members</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '2px solid #f3f4f6' }}>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>NAME</th>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>ROLE</th>
+                    <th style={{ padding: '8px 12px', fontSize: '10px', fontWeight: '800', color: '#9ca3af' }}>CONTACT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {members.filter(m => !m.leaderId && !m.isLeader).map((m, mIdx) => (
+                    <tr key={mIdx} style={{ borderBottom: '1px solid #f9fafb' }}>
+                      <td style={{ padding: '10px 12px', fontSize: '13px', fontWeight: '700' }}>{m.name}</td>
+                      <td style={{ padding: '10px 12px', fontSize: '12px' }}>{ROLES.find(r => r.id === m.role)?.label}</td>
+                      <td style={{ padding: '10px 12px', fontSize: '12px' }}>{m.phone}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ marginTop: '50px', paddingTop: '20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Studio Team Roster • Surya Studioz</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

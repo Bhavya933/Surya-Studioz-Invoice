@@ -31,7 +31,7 @@ const ConfirmModal = ({ isOpen, onConfirm, onCancel, invoiceNumber, isDarkMode }
   );
 };
 
-const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode }) => {
+const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode, searchQuery: globalSearchQuery }) => {
   const theme = {
     bg: isDarkMode ? '#1e293b' : '#f8fafc',
     card: isDarkMode ? '#334155' : '#ffffff',
@@ -40,7 +40,7 @@ const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode }) =>
     border: isDarkMode ? '#475569' : '#f1f5f9',
     inputBg: isDarkMode ? '#1e293b' : '#ffffff'
   };
-  const [search, setSearch] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
   const [filterMode, setFilterMode] = useState('all'); // 'all' | 'unique'
   const [confirmDelete, setConfirmDelete] = useState({ isOpen: false, id: null, number: '' });
 
@@ -56,7 +56,7 @@ const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode }) =>
   const baseList = filterMode === 'unique' ? uniqueInvoices : savedInvoices;
 
   const filtered = baseList.filter((inv) => {
-    const q = search.toLowerCase();
+    const q = (globalSearchQuery || localSearch).toLowerCase();
     return (
       (inv.client?.name || '').toLowerCase().includes(q) ||
       (inv.number || '').toLowerCase().includes(q) ||
@@ -127,8 +127,8 @@ const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode }) =>
           <input
             type="text"
             placeholder="Search by client name, invoice no. or date..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
             style={{ border: 'none', outline: 'none', fontSize: '14px', color: theme.text, flex: 1, background: 'transparent' }}
           />
         </div>
@@ -205,8 +205,79 @@ const HistoryPage = ({ savedInvoices, onEdit, onDelete, onBack, isDarkMode }) =>
             </tbody>
           </table>
         </div>
+      {/* HIDDEN PRINT REPORT FOR HISTORY PDF DOWNLOAD */}
+      <div id="history-report-root" style={{ position: 'absolute', left: '-9999px', top: '-9999px' }}>
+        <div id="history-report-content" style={{ width: '1000px', padding: '40px', background: '#fff', color: '#111827', fontFamily: 'Inter, system-ui, sans-serif' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #f3f4f6', paddingBottom: '24px', marginBottom: '40px' }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: '26px', fontWeight: '900', color: '#111827', letterSpacing: '-0.02em' }}>Invoice History & Receivables</h1>
+              <p style={{ margin: '6px 0 0 0', fontSize: '13px', color: '#6b7280', fontWeight: '500' }}>Generated on {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+            </div>
+            <div style={{ textAlign: 'right', minWidth: '120px' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filter Mode</p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '15px', fontWeight: '900', color: '#f97316' }}>{filterMode.toUpperCase()}</p>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', marginBottom: '40px' }}>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Total Invoices</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900' }}>{savedInvoices.length}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Total Balance Due</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#10b981' }}>₹{totalRevenue.toLocaleString()}</h2>
+            </div>
+            <div style={{ padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
+              <p style={{ margin: 0, fontSize: '10px', fontWeight: '800', color: '#6b7280', textTransform: 'uppercase' }}>Unique Clients</p>
+              <h2 style={{ margin: '8px 0 0 0', fontSize: '20px', fontWeight: '900', color: '#6366f1' }}>{uniqueCount}</h2>
+            </div>
+          </div>
+
+          <h3 style={{ fontSize: '16px', fontWeight: '900', marginBottom: '16px', borderLeft: '4px solid #f97316', paddingLeft: '12px' }}>Billing Registry Details</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: '#f9fafb' }}>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>SN</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>CLIENT NAME</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>INV NO.</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>DATE</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>TOTAL</th>
+                <th style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '11px', fontWeight: '800' }}>DUE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((inv, idx) => {
+                const sub = (inv.items || []).reduce((s, i) => s + (parseFloat(i.rate) || 0) * (parseInt(i.qty) || 0), 0);
+                const tax = sub * ((inv.taxRate || 0) / 100);
+                const total = sub + tax;
+                const due = total - (parseFloat(inv.amountPaid) || 0);
+                return (
+                  <tr key={idx}>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '12px' }}>{idx + 1}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px', fontWeight: '700' }}>{inv.client?.name || 'Untitled'}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '12px' }}>{inv.number}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '12px' }}>{inv.date}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px' }}>₹{total.toLocaleString()}</td>
+                    <td style={{ padding: '10px 12px', border: '1px solid #e5e7eb', fontSize: '13px', fontWeight: '700', color: due > 0 ? '#ef4444' : '#10b981' }}>₹{due.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="6" style={{ padding: '30px', textAlign: 'center', color: '#9ca3af', border: '1px solid #e5e7eb' }}>No invoices found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: '50px', paddingTop: '20px', borderTop: '1px solid #f3f4f6', textAlign: 'center' }}>
+            <p style={{ margin: 0, fontSize: '10px', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '1px' }}>Financial History Report • Surya Studioz</p>
+          </div>
+        </div>
       </div>
-    );
-  };
-  
-  export default HistoryPage;
+    </div>
+  );
+};
+
+export default HistoryPage;
